@@ -52,6 +52,19 @@
       "refresh_token": null
     }
   },
+  "profile": {
+    "plan": "free",
+    "usage": {},
+    "onboarding_done": {
+      "connect_account": false,
+      "generate_draft": false,
+      "schedule_post": false
+    },
+    "referral": null,
+    "flags": {
+      "": true
+    }
+  },
   "next_feedback_id": 2,
   "feedback": [
     {
@@ -61,5 +74,10 @@
       "meta": null,
       "created_at": "2025-08-16T19:23:39.742953+00:00"
     }
-  ]
+  ],
+  "next_nps_id": 1,
+  "nps": [],
+  "next_lead_id": 1,
+  "leads": [],
+  "custom_templates": []
 }
