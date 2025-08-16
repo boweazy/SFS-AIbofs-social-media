@@ -1,17 +1,16 @@
 from __future__ import annotations
 
-import asyncio
 import json
 import re
+import threading
+import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.staticfiles import StaticFiles
-from starlette.responses import FileResponse
-from pydantic import BaseModel, Field
+from flask import Flask, request, jsonify, send_from_directory
+import os
 
 # Use absolute path resolution for static files
 BASE_DIR: Path = Path(__file__).resolve().parent
@@ -40,12 +39,16 @@ class Store:
     """Single-file JSON store (keeps setup easy)."""
     def __init__(self, file: Path):
         self.file = file
-        self.lock = asyncio.Lock()
+        self.lock = threading.Lock()
         if not file.exists():
             self._write(State())
 
     def _read(self) -> State:
-        raw = json.loads(self.file.read_text() or "{}")
+        try:
+            raw = json.loads(self.file.read_text() or "{}")
+        except (FileNotFoundError, json.JSONDecodeError):
+            return State()
+        
         if not raw:
             return State()
         posts = [PostRecord(**p) for p in raw.get("posts", [])]
@@ -63,8 +66,8 @@ class Store:
         }
         self.file.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
 
-    async def add_post(self, rec: PostRecord) -> PostRecord:
-        async with self.lock:
+    def add_post(self, rec: PostRecord) -> PostRecord:
+        with self.lock:
             state = self._read()
             rec.id = state.next_post_id
             state.next_post_id += 1
@@ -72,8 +75,8 @@ class Store:
             self._write(state)
             return rec
 
-    async def update_post(self, rec: PostRecord) -> None:
-        async with self.lock:
+    def update_post(self, rec: PostRecord) -> None:
+        with self.lock:
             state = self._read()
             for i, p in enumerate(state.posts):
                 if p.id == rec.id:
@@ -81,16 +84,16 @@ class Store:
                     break
             self._write(state)
 
-    async def list_posts(self, status: Optional[str] = None) -> List[PostRecord]:
-        async with self.lock:
+    def list_posts(self, status: Optional[str] = None) -> List[PostRecord]:
+        with self.lock:
             state = self._read()
             rows = state.posts
             if status:
                 rows = [p for p in rows if p.status == status]
             return sorted(rows, key=lambda r: r.created_at, reverse=True)
 
-    async def save_account(self, platform: str, access_token: str, refresh_token: Optional[str]) -> None:
-        async with self.lock:
+    def save_account(self, platform: str, access_token: str, refresh_token: Optional[str]) -> None:
+        with self.lock:
             state = self._read()
             state.accounts[platform] = {
                 "access_token": access_token,
@@ -98,8 +101,8 @@ class Store:
             }
             self._write(state)
 
-    async def get_access_token(self, platform: str) -> Optional[str]:
-        async with self.lock:
+    def get_access_token(self, platform: str) -> Optional[str]:
+        with self.lock:
             state = self._read()
             acc = state.accounts.get(platform)
             return acc.get("access_token") if acc else None
@@ -151,125 +154,138 @@ def publish_stub(platform: str, content: str, token: Optional[str]) -> tuple[boo
     ext_id = f"{platform}_{abs(hash(content)) % 10_000_000}"
     return True, ext_id, None
 
-# ----- API schemas -----
-Platform = Literal["x", "linkedin"]
+# ----- Flask app -----
+app = Flask(__name__)
+app.secret_key = os.environ.get("SESSION_SECRET", "dev-secret-key")
 
-class GenerateRequest(BaseModel):
-    topic: str = Field(..., min_length=2, max_length=500)
-    tone: str = Field(default="helpful")
-    count: int = Field(default=3, ge=1, le=10)
+@app.route("/healthz")
+def healthz():
+    return jsonify({"ok": True, "brand": "Smart Flow Systems"})
 
-class DraftOut(BaseModel):
-    content: str
-    hashtags: List[str]
-    score: float
-    rationale: str
+@app.route("/auth/manual", methods=["POST"])
+def manual_auth():
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "No data provided"}), 400
+    
+    platform = data.get("platform")
+    access_token = data.get("access_token")
+    refresh_token = data.get("refresh_token")
+    
+    store.save_account(platform, access_token, refresh_token)
+    return jsonify({"ok": True, "platform": platform})
 
-class CreatePostRequest(BaseModel):
-    platform: Platform
-    content: str = Field(..., min_length=1, max_length=4000)
-    scheduled_time: Optional[datetime] = None  # if None -> now
+@app.route("/generate", methods=["POST"])
+def generate():
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "No data provided"}), 400
+    
+    topic = data.get("topic", "")
+    tone = data.get("tone", "helpful")
+    count = data.get("count", 3)
+    
+    if not topic or len(topic) < 2:
+        return jsonify({"detail": "Topic must be at least 2 characters"}), 400
+    
+    if count < 1 or count > 10:
+        count = 3
+    
+    drafts = generate_variants(topic, tone, count)
+    return jsonify(drafts)
 
-class PostOut(BaseModel):
-    id: int
-    platform: Platform
-    content: str
-    status: str
-    scheduled_time: Optional[str]
-    external_id: Optional[str]
-    error: Optional[str]
-    created_at: str
-    updated_at: str
-
-class ManualAuthRequest(BaseModel):
-    platform: Platform
-    access_token: str
-    refresh_token: Optional[str] = None
-
-# ----- FastAPI app -----
-app = FastAPI(title="Smart Flow Systems — Social AI", version="0.1.0")
-_scheduler_task: Optional[asyncio.Task] = None
-
-@app.on_event("startup")
-async def _start():
-    global _scheduler_task
-    _scheduler_task = asyncio.create_task(_scheduler_loop())
-
-@app.on_event("shutdown")
-async def _stop():
-    if _scheduler_task:
-        _scheduler_task.cancel()
-
-@app.get("/healthz")
-async def healthz():
-    return {"ok": True, "brand": "Smart Flow Systems"}
-
-@app.post("/auth/manual")
-async def manual_auth(req: ManualAuthRequest):
-    await store.save_account(req.platform, req.access_token, req.refresh_token)
-    return {"ok": True, "platform": req.platform}
-
-@app.post("/generate", response_model=List[DraftOut])
-async def generate(req: GenerateRequest):
-    drafts = generate_variants(req.topic, req.tone, req.count)
-    return [DraftOut(**d) for d in drafts]
-
-@app.post("/posts", response_model=PostOut)
-async def create_or_schedule(req: CreatePostRequest):
-    when = req.scheduled_time or datetime.now(timezone.utc) + timedelta(seconds=10)
+@app.route("/posts", methods=["POST"])
+def create_or_schedule():
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "No data provided"}), 400
+    
+    platform = data.get("platform")
+    content = data.get("content", "").strip()
+    scheduled_time = data.get("scheduled_time")
+    
+    if not content:
+        return jsonify({"detail": "Content cannot be empty"}), 400
+    
+    if scheduled_time:
+        try:
+            when = datetime.fromisoformat(scheduled_time.replace('Z', '+00:00'))
+        except ValueError:
+            return jsonify({"detail": "Invalid scheduled_time format"}), 400
+    else:
+        when = datetime.now(timezone.utc) + timedelta(seconds=10)
+    
     if when.tzinfo is None:
         when = when.replace(tzinfo=timezone.utc)
+    
     if when < datetime.now(timezone.utc):
-        raise HTTPException(status_code=400, detail="scheduled_time must be in the future")
+        return jsonify({"detail": "scheduled_time must be in the future"}), 400
 
     rec = PostRecord(
         id=0,
-        platform=req.platform,
-        content=req.content.strip(),
+        platform=platform,
+        content=content,
         status="scheduled",
         scheduled_time=when.isoformat(),
     )
-    saved = await store.add_post(rec)
-    return PostOut(**asdict(saved))
+    saved = store.add_post(rec)
+    return jsonify(asdict(saved))
 
-@app.get("/posts", response_model=List[PostOut])
-async def list_posts(status: Optional[str] = Query(default=None)):
-    rows = await store.list_posts(status=status)
-    return [PostOut(**asdict(r)) for r in rows]
+@app.route("/posts", methods=["GET"])
+def list_posts():
+    status = request.args.get("status")
+    rows = store.list_posts(status=status)
+    return jsonify([asdict(r) for r in rows])
 
-# background publisher
-async def _scheduler_loop():
+# Static file serving with absolute paths
+@app.route("/static/<path:filename>")
+def static_files(filename):
+    if STATIC_DIR.exists():
+        return send_from_directory(str(STATIC_DIR), filename)
+    else:
+        return jsonify({"error": "Static files not found"}), 404
+
+@app.route("/")
+def index():
+    index_file = STATIC_DIR / "index.html"
+    if index_file.exists():
+        return send_from_directory(str(STATIC_DIR), "index.html")
+    else:
+        return jsonify({"error": "Static files not found", "expected_path": str(STATIC_DIR)}), 404
+
+# Background scheduler
+def scheduler_loop():
     while True:
         try:
-            await _publish_due()
+            publish_due()
         except Exception as e:
             print("scheduler error:", e)
-        await asyncio.sleep(5)
+        time.sleep(5)
 
-async def _publish_due():
+def publish_due():
     now = datetime.now(timezone.utc)
-    rows = await store.list_posts(status="scheduled")
+    rows = store.list_posts(status="scheduled")
     for rec in rows:
-        due = datetime.fromisoformat(rec.scheduled_time) if rec.scheduled_time else now
+        if rec.scheduled_time:
+            try:
+                due = datetime.fromisoformat(rec.scheduled_time)
+            except ValueError:
+                continue
+        else:
+            due = now
+            
         if due <= now:
-            token = await store.get_access_token(rec.platform)
+            token = store.get_access_token(rec.platform)
             ok, ext_id, err = publish_stub(rec.platform, rec.content, token)
             rec.status = "published" if ok else "failed"
             rec.external_id = ext_id
             rec.error = err
             rec.updated_at = datetime.now(timezone.utc).isoformat()
-            await store.update_post(rec)
+            store.update_post(rec)
 
-# static UI - using absolute paths
-if STATIC_DIR.exists():
-    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
-else:
-    print(f"Warning: Static directory {STATIC_DIR} not found")
+# Start background scheduler
+scheduler_thread = threading.Thread(target=scheduler_loop, daemon=True)
+scheduler_thread.start()
 
-@app.get("/")
-async def index():
-    index_file = STATIC_DIR / "index.html"
-    if index_file.exists():
-        return FileResponse(str(index_file))
-    else:
-        return {"error": "Static files not found", "expected_path": str(STATIC_DIR)}
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000, debug=True)
