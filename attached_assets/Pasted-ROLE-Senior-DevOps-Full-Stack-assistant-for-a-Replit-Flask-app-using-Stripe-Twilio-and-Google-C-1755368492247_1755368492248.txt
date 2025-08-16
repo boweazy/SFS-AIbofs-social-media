@@ -1,0 +1,427 @@
+ROLE: Senior DevOps/Full-Stack assistant for a Replit + Flask app using Stripe, Twilio, and Google Calendar. Make all changes directly in the project with exact file contents and verify it runs.
+
+GOAL:
+- Connect to GitHub cleanly (no secrets pushed).
+- Create .gitignore, set Replit Secrets, add config.py.
+- Create Stripe products (3 tiers), wire Checkout, add webhook handler.
+- Add simple plan gating in code.
+- Add a 1-page pricing section (black+gold).
+- Provide test-mode flow to verify payments and access.
+
+========================================
+1) CONNECT REPLIT ↔ GITHUB
+========================================
+- Use Replit’s Git tab → Connect to GitHub.
+- Ensure we can Commit & Push.
+- If a repo does not exist, create one named: smartflow-app (private).
+
+========================================
+2) CREATE .gitignore (exact content)
+========================================
+Create file: .gitignore
+-----
+# Replit / Python project ignores
+.replit
+replit.nix
+
+# Virtual environments
+venv/
+env/
+.venv/
+__pycache__/
+
+# Python cache & build
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.sqlite3
+*.log
+*.egg-info/
+dist/
+build/
+
+# Environment / secrets
+.env
+*.secret
+*.key
+secrets.json
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Node (if using frontend)
+node_modules/
+-----
+
+Commit this file.
+
+========================================
+3) REQUIREMENTS
+========================================
+If requirements.txt exists, ensure these lines exist (add if missing). Otherwise, create the file.
+
+Create/append file: requirements.txt
+-----
+Flask>=3.0.0
+stripe>=6.0.0
+twilio>=9.0.0
+python-dotenv>=1.0.1
+gunicorn>=21.2.0
+# Optional Google Calendar libs (placeholder if needed later)
+google-api-python-client>=2.124.0
+google-auth>=2.31.0
+google-auth-oauthlib>=1.2.0
+-----
+
+Run install to make sure dependencies are available.
+
+========================================
+4) REPLIT SECRETS (set in the lock icon)
+========================================
+Add these keys (empty values are fine now; I’ll fill later in Replit UI):
+- STRIPE_SECRET_KEY
+- STRIPE_PUBLISHABLE_KEY
+- STRIPE_WEBHOOK_SECRET
+- STRIPE_PRICE_STARTER_MONTHLY
+- STRIPE_PRICE_FLOWKIT_MONTHLY
+- STRIPE_PRICE_LAUNCHPACK_MONTHLY
+- STRIPE_PRICE_STARTER_ONEOFF
+- STRIPE_PRICE_FLOWKIT_ONEOFF
+- STRIPE_PRICE_LAUNCHPACK_ONEOFF
+- TWILIO_ACCOUNT_SID
+- TWILIO_AUTH_TOKEN
+- TWILIO_PHONE_NUMBER
+- GOOGLE_CLIENT_ID
+- GOOGLE_CLIENT_SECRET
+- FLASK_SECRET_KEY
+- DEBUG (set "True" for dev)
+
+========================================
+5) CONFIG FILE
+========================================
+Create file: config.py
+-----
+import os
+
+class Config:
+    # Stripe
+    STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY")
+    STRIPE_PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY")
+    STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
+
+    # Price IDs (Stripe Dashboard -> Products -> Prices)
+    STRIPE_PRICE_STARTER_MONTHLY     = os.getenv("STRIPE_PRICE_STARTER_MONTHLY")
+    STRIPE_PRICE_FLOWKIT_MONTHLY     = os.getenv("STRIPE_PRICE_FLOWKIT_MONTHLY")
+    STRIPE_PRICE_LAUNCHPACK_MONTHLY  = os.getenv("STRIPE_PRICE_LAUNCHPACK_MONTHLY")
+    STRIPE_PRICE_STARTER_ONEOFF      = os.getenv("STRIPE_PRICE_STARTER_ONEOFF")
+    STRIPE_PRICE_FLOWKIT_ONEOFF      = os.getenv("STRIPE_PRICE_FLOWKIT_ONEOFF")
+    STRIPE_PRICE_LAUNCHPACK_ONEOFF   = os.getenv("STRIPE_PRICE_LAUNCHPACK_ONEOFF")
+
+    # Twilio
+    TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
+    TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
+    TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER")
+
+    # Google (placeholder)
+    GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+    GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+
+    # Flask
+    FLASK_SECRET_KEY = os.getenv("FLASK_SECRET_KEY", "fallback-secret")
+    DEBUG = os.getenv("DEBUG", "False").lower() in ("true", "1", "yes")
+
+# Feature gating by plan
+FEATURES_BY_PLAN = {
+    "starter": ["booking", "basic_ai_bot", "one_template"],
+    "flowkit": ["booking","ai_scheduler","sms","portal","two_templates","reports"],
+    "launchpack": [
+        "booking","ai_scheduler","sms","portal","reports",
+        "ai_concierge","analytics","recovery","automations","three_templates","priority_support"
+    ]
+}
+-----
+Commit file.
+
+========================================
+6) SIMPLE PRICING MAP (optional alternative to secrets)
+========================================
+Create file: pricing.json
+-----
+{
+  "plans": {
+    "starter_monthly": {
+      "features": ["booking", "basic_ai_bot", "one_template"]
+    },
+    "flowkit_monthly": {
+      "features": ["booking","ai_scheduler","sms","portal","two_templates","reports"]
+    },
+    "launchpack_monthly": {
+      "features": ["booking","ai_scheduler","sms","portal","reports",
+                   "ai_concierge","analytics","recovery","automations","three_templates","priority_support"]
+    }
+  }
+}
+-----
+Commit file.
+
+========================================
+7) STRIPE CHECKOUT + WEBHOOK (Flask)
+========================================
+- If app.py does not exist, create it with a minimal Flask app + Stripe routes below.
+- If app.py exists, add/merge these endpoints:
+  - GET /pricing (serves a simple pricing HTML)
+  - POST /create-checkout-session (takes plan + billing mode)
+  - POST /webhooks/stripe (updates user plan on successful payment)
+
+Create/overwrite file: app.py
+-----
+import os
+from flask import Flask, request, jsonify, render_template_string, redirect
+from config import Config, FEATURES_BY_PLAN
+import stripe
+
+app = Flask(__name__)
+app.secret_key = Config.FLASK_SECRET_KEY
+
+stripe.api_key = Config.STRIPE_SECRET_KEY
+
+# --- Simple in-memory user store (replace with DB) ---
+USERS = {
+    # "user_id": {"email": "...", "plan": "starter|flowkit|launchpack"}
+}
+CURRENT_USER_ID = "demo-user"  # for demo only
+
+# --- Pricing Page (black + gold) ---
+PRICING_HTML = """
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>SmartFlow Pricing</title>
+  <style>
+    body { margin:0; font-family: system-ui, Arial, sans-serif; background:#0e0b0b; color:#eaeaea; }
+    header { padding:24px; text-align:center; border-bottom: 1px solid #2a221b; }
+    .gold { color:#d4af37; }
+    .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(260px,1fr)); gap:18px; padding:24px; max-width:1100px; margin: 0 auto; }
+    .card { background:#171311; border:1px solid #2a221b; border-radius:14px; padding:20px; }
+    .card h2 { margin:0 0 6px; color:#d4af37; }
+    .price { font-size:28px; margin:6px 0 10px; }
+    .btn { display:inline-block; padding:10px 14px; border:1px solid #d4af37; color:#d4af37; text-decoration:none; border-radius:10px; }
+    .btn:hover { background:#d4af37; color:#0e0b0b; }
+    ul { padding-left:18px; line-height:1.6; }
+    footer { text-align:center; padding:18px; color:#8c7a5a; border-top: 1px solid #2a221b; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1 class="gold">SmartFlow Systems</h1>
+    <p>Premium automation, fast delivery.</p>
+  </header>
+
+  <section class="grid">
+    <div class="card">
+      <h2>Smart Starter</h2>
+      <div class="price">£49/mo or £399 one-off</div>
+      <ul>
+        <li>Branded 1-page site</li>
+        <li>Booking + Stripe deposits</li>
+        <li>Google Calendar sync</li>
+        <li>Basic AI FAQ bot</li>
+        <li>1 niche template (barber/salon/fitness)</li>
+      </ul>
+      <a class="btn" href="/checkout?plan=starter&mode=monthly">Start Monthly</a>
+      <a class="btn" href="/checkout?plan=starter&mode=oneoff">One-Off</a>
+    </div>
+
+    <div class="card">
+      <h2>The Flow Kit</h2>
+      <div class="price">£149/mo or £999 one-off</div>
+      <ul>
+        <li>Everything in Starter</li>
+        <li>AI Social Scheduler (Buffer)</li>
+        <li>SMS reminders (Twilio)</li>
+        <li>Client portal + promo codes</li>
+        <li>2 templates + monthly report</li>
+      </ul>
+      <a class="btn" href="/checkout?plan=flowkit&mode=monthly">Start Monthly</a>
+      <a class="btn" href="/checkout?plan=flowkit&mode=oneoff">One-Off</a>
+    </div>
+
+    <div class="card">
+      <h2>Salon Launch Pack</h2>
+      <div class="price">£299/mo or £1,999 one-off</div>
+      <ul>
+        <li>Everything in Flow Kit</li>
+        <li>AI Concierge + analytics</li>
+        <li>Abandoned booking recovery</li>
+        <li>Custom automations (webhooks)</li>
+        <li>Priority support</li>
+      </ul>
+      <a class="btn" href="/checkout?plan=launchpack&mode=monthly">Start Monthly</a>
+      <a class="btn" href="/checkout?plan=launchpack&mode=oneoff">One-Off</a>
+    </div>
+  </section>
+
+  <footer>© SmartFlow Systems</footer>
+</body>
+</html>
+"""
+
+@app.get("/pricing")
+def pricing():
+    return render_template_string(PRICING_HTML)
+
+# Simple access gate example
+@app.get("/feature/<name>")
+def feature_access(name):
+    user = USERS.get(CURRENT_USER_ID, {"plan": "starter"})
+    plan = user.get("plan", "starter")
+    if name in FEATURES_BY_PLAN.get(plan, []):
+        return jsonify({"ok": True, "feature": name, "plan": plan})
+    return jsonify({"ok": False, "error": "Upgrade required", "plan": plan}), 402
+
+@app.get("/checkout")
+def checkout_redirect():
+    plan = request.args.get("plan", "starter")
+    mode = request.args.get("mode", "monthly")  # "monthly" or "oneoff"
+
+    price_map = {
+        ("starter","monthly"):  Config.STRIPE_PRICE_STARTER_MONTHLY,
+        ("flowkit","monthly"):  Config.STRIPE_PRICE_FLOWKIT_MONTHLY,
+        ("launchpack","monthly"): Config.STRIPE_PRICE_LAUNCHPACK_MONTHLY,
+        ("starter","oneoff"):   Config.STRIPE_PRICE_STARTER_ONEOFF,
+        ("flowkit","oneoff"):   Config.STRIPE_PRICE_FLOWKIT_ONEOFF,
+        ("launchpack","oneoff"): Config.STRIPE_PRICE_LAUNCHPACK_ONEOFF,
+    }
+    price_id = price_map.get((plan, mode))
+    if not price_id:
+        return "Price not configured", 400
+
+    session = stripe.checkout.Session.create(
+        mode="subscription" if mode=="monthly" else "payment",
+        line_items=[{"price": price_id, "quantity": 1}],
+        success_url=request.host_url + "success?session_id={CHECKOUT_SESSION_ID}",
+        cancel_url=request.host_url + "pricing",
+    )
+    return redirect(session.url, code=303)
+
+@app.get("/success")
+def success():
+    return "Payment successful — you'll receive onboarding by email. You can now access premium features."
+
+# --- Stripe Webhook ---
+import json
+import stripe
+
+@app.post("/webhooks/stripe")
+def stripe_webhook():
+    payload = request.data
+    sig_header = request.headers.get("Stripe-Signature", None)
+    endpoint_secret = Config.STRIPE_WEBHOOK_SECRET
+
+    try:
+        event = stripe.Webhook.construct_event(payload, sig_header, endpoint_secret)
+    except Exception as e:
+        return str(e), 400
+
+    if event["type"] == "checkout.session.completed":
+        session = event["data"]["object"]
+        # Determine plan from line_items (requires expand)
+        # Simpler demo: choose by amount_total or metadata — here we fetch line items:
+        try:
+            line_items = stripe.checkout.Session.list_line_items(session["id"], limit=1)
+            price_id = line_items["data"][0]["price"]["id"]
+        except Exception:
+            price_id = None
+
+        # Map price_id -> plan (match secrets env)
+        price_to_plan = {
+            Config.STRIPE_PRICE_STARTER_MONTHLY: "starter",
+            Config.STRIPE_PRICE_FLOWKIT_MONTHLY: "flowkit",
+            Config.STRIPE_PRICE_LAUNCHPACK_MONTHLY: "launchpack",
+            Config.STRIPE_PRICE_STARTER_ONEOFF: "starter",
+            Config.STRIPE_PRICE_FLOWKIT_ONEOFF: "flowkit",
+            Config.STRIPE_PRICE_LAUNCHPACK_ONEOFF: "launchpack",
+        }
+        plan = price_to_plan.get(price_id, "starter")
+
+        # Demo: mark current user; replace with real user lookup via session/customer_email
+        USERS[CURRENT_USER_ID] = {"plan": plan}
+        # TODO: send onboarding email/SMS here
+
+    elif event["type"] == "invoice.payment_succeeded":
+        pass  # Keep access active
+
+    elif event["type"] == "customer.subscription.deleted":
+        # downgrade if subscription cancelled
+        USERS[CURRENT_USER_ID] = {"plan": "starter"}
+
+    return "", 200
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 3000)))
+-----
+Commit file.
+
+========================================
+8) RUN + VERIFY
+========================================
+- Start the app and open /pricing
+- Verify buttons redirect to Stripe Checkout (will fail only if price IDs not set yet—this is OK until we configure Stripe).
+
+========================================
+9) STRIPE DASHBOARD – TEST MODE SETUP (do this via Stripe UI, then set secrets)
+========================================
+- Turn ON Test mode.
+- Create 3 Products, each with:
+  A) Monthly recurring (GBP):
+     - Smart Starter — £49/mo
+     - The Flow Kit — £149/mo
+     - Salon Launch Pack — £299/mo
+  B) One-off (GBP):
+     - Smart Starter Setup — £399
+     - The Flow Kit Setup — £999
+     - Salon Launch Pack Setup — £1999
+
+- Grab the 6 price IDs and paste them into Replit Secrets:
+  STRIPE_PRICE_STARTER_MONTHLY=price_xxx
+  STRIPE_PRICE_FLOWKIT_MONTHLY=price_xxx
+  STRIPE_PRICE_LAUNCHPACK_MONTHLY=price_xxx
+  STRIPE_PRICE_STARTER_ONEOFF=price_xxx
+  STRIPE_PRICE_FLOWKIT_ONEOFF=price_xxx
+  STRIPE_PRICE_LAUNCHPACK_ONEOFF=price_xxx
+
+- Create a Webhook endpoint pointing to:
+  https://<your-repl-host>/webhooks/stripe
+  Select events:
+    - checkout.session.completed
+    - invoice.payment_succeeded
+    - customer.subscription.deleted
+  Copy the webhook signing secret -> set Replit Secret:
+  STRIPE_WEBHOOK_SECRET=whsec_...
+
+- Test card (Stripe): 4242 4242 4242 4242, any future expiry, any CVC, any UK postcode.
+
+========================================
+10) TEST PLAN GATING QUICKLY
+========================================
+- Before paying, call: GET /feature/ai_concierge  -> should return 402 (upgrade needed).
+- Complete a Flow Kit checkout (monthly).
+- After webhook fires, GET /feature/ai_concierge -> still gated (Flow Kit doesn’t include it).
+- Complete a Launch Pack checkout -> GET /feature/ai_concierge -> ok: True.
+
+========================================
+11) OPTIONAL: TWILIO & CALENDAR SMOKE TESTS
+========================================
+- Twilio: set TWILIO_* secrets; from a separate route, send a test SMS to a verified number.
+- Google Calendar: keep libs installed; integrate later (auth flow + service account if needed).
+
+========================================
+12) FINALIZE
+========================================
+- Push all changes to GitHub (commit message: "SmartFlow base: pricing + checkout + webhook + gating").
+- Output the live /pricing URL and confirm that the project runs without errors.
+
+DONE.

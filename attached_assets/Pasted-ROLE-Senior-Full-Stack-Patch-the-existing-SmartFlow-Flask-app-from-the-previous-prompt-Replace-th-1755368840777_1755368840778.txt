@@ -1,0 +1,281 @@
+ROLE: Senior Full-Stack. Patch the existing SmartFlow Flask app from the previous prompt. Replace the in-memory USERS store with SQLite (SQLAlchemy), add onboarding helpers (email & SMS), and wire Stripe webhook to persist user plan.
+
+========================================
+1) REQUIREMENTS (append if missing)
+========================================
+Edit/append file: requirements.txt
+-----
+SQLAlchemy>=2.0.30
+Flask-SQLAlchemy>=3.1.1
+requests>=2.32.0
+-----
+
+Run install.
+
+========================================
+2) CREATE db.py (SQLAlchemy models + session)
+========================================
+Create file: db.py
+-----
+from flask_sqlalchemy import SQLAlchemy
+from datetime import datetime
+
+db = SQLAlchemy()
+
+class User(db.Model):
+    __tablename__ = "users"
+    id = db.Column(db.String(64), primary_key=True)   # app user id
+    email = db.Column(db.String(255), unique=True, index=True, nullable=False)
+    stripe_customer_id = db.Column(db.String(128), unique=True, index=True)
+    plan = db.Column(db.String(32), default="starter")  # starter|flowkit|launchpack
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<User {self.email} plan={self.plan}>"
+-----
+
+Commit file.
+
+========================================
+3) UPDATE config.py (add DB URI + MAIL placeholders)
+========================================
+Open file: config.py
+- If not present, add these at the bottom of Config:
+-----
+    # Database
+    SQLALCHEMY_DATABASE_URI = os.getenv("DATABASE_URL", "sqlite:///smartflow.db")
+    SQLALCHEMY_TRACK_MODIFICATIONS = False
+
+    # Email (choose one provider or use SMTP)
+    SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")  # optional
+    SMTP_HOST = os.getenv("SMTP_HOST")
+    SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+    SMTP_USER = os.getenv("SMTP_USER")
+    SMTP_PASS = os.getenv("SMTP_PASS")
+    SMTP_FROM = os.getenv("SMTP_FROM", "no-reply@smartflowsystems.com")
+-----
+
+Commit.
+
+========================================
+4) CREATE onboarding.py (email + SMS helpers)
+========================================
+Create file: onboarding.py
+-----
+import os
+import smtplib
+from email.mime.text import MIMEText
+from twilio.rest import Client
+from config import Config
+
+# --- Email helpers ---
+def send_email_smtp(to_email: str, subject: str, body: str):
+    if not (Config.SMTP_HOST and Config.SMTP_USER and Config.SMTP_PASS):
+        print("[onboarding] SMTP not configured; skipping email.")
+        return
+    msg = MIMEText(body, "plain", "utf-8")
+    msg["Subject"] = subject
+    msg["From"] = Config.SMTP_FROM
+    msg["To"] = to_email
+
+    with smtplib.SMTP(Config.SMTP_HOST, Config.SMTP_PORT) as server:
+        server.starttls()
+        server.login(Config.SMTP_USER, Config.SMTP_PASS)
+        server.sendmail(Config.SMTP_FROM, [to_email], msg.as_string())
+
+# --- SMS helpers (Twilio) ---
+def send_sms(to_number: str, message: str):
+    if not (Config.TWILIO_ACCOUNT_SID and Config.TWILIO_AUTH_TOKEN and Config.TWILIO_PHONE_NUMBER):
+        print("[onboarding] Twilio not configured; skipping SMS.")
+        return
+    client = Client(Config.TWILIO_ACCOUNT_SID, Config.TWILIO_AUTH_TOKEN)
+    client.messages.create(
+        from_=Config.TWILIO_PHONE_NUMBER,
+        to=to_number,
+        body=message,
+    )
+
+# --- Templates ---
+def onboarding_email(plan: str):
+    return f"""Welcome to SmartFlow Systems 👋
+
+You're on the '{plan.title()}' plan.
+
+Here’s what to do next:
+1) Connect your Google Calendar (Settings → Calendar)
+2) Add your brand details (logo, colours)
+3) Turn on SMS reminders (Settings → Notifications)
+4) (Optional) Import your client list
+
+Need help? Reply to this email and our team will sort you.
+— Team SmartFlow
+"""
+
+def onboarding_sms(plan: str):
+    return f"SmartFlow: Your '{plan.title()}' plan is live. Check your dashboard to finish setup 🎯"
+
+-----
+
+Commit file.
+
+========================================
+5) PATCH app.py (use DB, init, and persist plans)
+========================================
+Open file: app.py and make these changes:
+
+A) Top imports: add
+-----
+from flask_sqlalchemy import SQLAlchemy
+from db import db, User
+from onboarding import send_email_smtp, send_sms, onboarding_email, onboarding_sms
+-----
+
+B) After app = Flask(__name__):
+Add:
+-----
+app.config["SQLALCHEMY_DATABASE_URI"] = Config.SQLALCHEMY_DATABASE_URI
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = Config.SQLALCHEMY_TRACK_MODIFICATIONS
+db.init_app(app)
+with app.app_context():
+    db.create_all()
+-----
+
+C) Remove the in-memory USERS dict + CURRENT_USER_ID. Replace with a simple current user helper for the demo:
+-----
+def get_current_user():
+    # DEMO ONLY: In real app, use auth session or JWT.
+    # We'll upsert a demo user tied to a fixed email for testing.
+    demo_email = "demo@smartflowsystems.com"
+    user = User.query.filter_by(email=demo_email).first()
+    if not user:
+        user = User(id="demo-user", email=demo_email, plan="starter")
+        db.session.add(user)
+        db.session.commit()
+    return user
+-----
+
+D) In /feature/<name> route, replace user lookup with:
+-----
+user = get_current_user()
+plan = user.plan
+-----
+
+E) In /checkout route, add metadata to Stripe session so webhook can identify the user:
+Locate session creation and change to:
+-----
+user = get_current_user()
+session = stripe.checkout.Session.create(
+    mode="subscription" if mode=="monthly" else "payment",
+    line_items=[{"price": price_id, "quantity": 1}],
+    success_url=request.host_url + "success?session_id={CHECKOUT_SESSION_ID}",
+    cancel_url=request.host_url + "pricing",
+    customer_email=user.email,  # helps map session -> user in webhook
+    metadata={"app_user_id": user.id}
+)
+-----
+
+F) In /webhooks/stripe, after constructing event, update user plan in DB:
+Replace webhook handler body with:
+-----
+if event["type"] == "checkout.session.completed":
+    session = event["data"]["object"]
+
+    # Try to locate user by metadata or email
+    app_user_id = (session.get("metadata") or {}).get("app_user_id")
+    customer_email = session.get("customer_details", {}).get("email")
+
+    user = None
+    if app_user_id:
+        user = User.query.get(app_user_id)
+    if not user and customer_email:
+        user = User.query.filter_by(email=customer_email).first()
+    if not user and customer_email:
+        # create new if not exists
+        user = User(id=customer_email, email=customer_email, plan="starter")
+        db.session.add(user)
+        db.session.commit()
+
+    # Fetch line items to map price -> plan
+    try:
+        line_items = stripe.checkout.Session.list_line_items(session["id"], limit=1)
+        price_id = line_items["data"][0]["price"]["id"]
+    except Exception:
+        price_id = None
+
+    price_to_plan = {
+        Config.STRIPE_PRICE_STARTER_MONTHLY: "starter",
+        Config.STRIPE_PRICE_FLOWKIT_MONTHLY: "flowkit",
+        Config.STRIPE_PRICE_LAUNCHPACK_MONTHLY: "launchpack",
+        Config.STRIPE_PRICE_STARTER_ONEOFF: "starter",
+        Config.STRIPE_PRICE_FLOWKIT_ONEOFF: "flowkit",
+        Config.STRIPE_PRICE_LAUNCHPACK_ONEOFF: "launchpack",
+    }
+    plan = price_to_plan.get(price_id, "starter")
+
+    if user:
+        user.plan = plan
+        db.session.commit()
+
+        # Send onboarding
+        try:
+            send_email_smtp(user.email, "Your SmartFlow plan is live", onboarding_email(plan))
+        except Exception as e:
+            print("[onboarding email] error:", e)
+
+        # If you want SMS, hardcode/test a number (E.164) or store it on user profile
+        try:
+            # send_sms("+44XXXXXXXXXX", onboarding_sms(plan))  # uncomment + set a verified number
+            pass
+        except Exception as e:
+            print("[onboarding sms] error:", e)
+
+elif event["type"] == "customer.subscription.deleted":
+    # Try to get the customer record and downgrade
+    obj = event["data"]["object"]
+    customer_id = obj.get("customer")
+    if customer_id:
+        user = User.query.filter_by(stripe_customer_id=customer_id).first()
+        if user:
+            user.plan = "starter"
+            db.session.commit()
+
+return "", 200
+-----
+
+G) Optional: update /success to show the user’s plan from DB:
+-----
+@app.get("/success")
+def success():
+    user = get_current_user()
+    return f"Payment successful. Your plan: {user.plan}. Check your email for onboarding."
+-----
+
+Commit file.
+
+========================================
+6) SECRETS TO SET (if not already)
+========================================
+In Replit Secrets:
+- DATABASE_URL (optional; defaults to sqlite:///smartflow.db)
+- SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM (if you want email)
+- TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER (if you want SMS)
+(Stripe keys already set.)
+
+========================================
+7) RUN & VERIFY
+========================================
+- Start the app.
+- Visit /pricing -> run a test checkout (Stripe Test Mode, card 4242…).
+- After webhook fires, call /feature/ai_concierge:
+  - FlowKit: should be gated (402)
+  - LaunchPack: should be allowed
+- Check DB persisted:
+  - Plan value stored in users table.
+
+========================================
+8) PUSH TO GITHUB
+========================================
+Commit message: "DB + onboarding + webhook plan persistence"
+Push via Git tab.
+
+DONE.
