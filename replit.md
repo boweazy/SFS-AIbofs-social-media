@@ -45,22 +45,31 @@ Preferred communication style: Simple, everyday language.
 - **Tested FastAPI import**: Application imports successfully with 11 routes configured
 
 ## Current Deployment Status
-- **Working Flask Application**: Successfully converted from FastAPI to Flask for gunicorn compatibility
-- **Server Configuration**: Now running properly with gunicorn sync worker on port 5000
-- **All Endpoints Working**: 
-  - `/healthz` returns `{"ok":true,"brand":"Smart Flow Systems"}`
-  - `/` serves static HTML correctly
-  - `/static/*` serves CSS, JS files properly
-  - `/auth/manual` accepts authentication tokens
-  - `/generate` creates content drafts with hashtags and scoring
-  - `/posts` handles post creation and scheduling
-- **Background Scheduler**: Running in separate thread for auto-publishing scheduled posts
-- **Static Files**: Confirmed working with absolute path resolution
+- **FastAPI Application**: Fully implemented with all premium features
+- **New Endpoints Added**:
+  - `/templates` - Browse content templates by purpose
+  - `/templates/render` - Render templates with variables  
+  - `/agent/ask` - AI agent for content advice
+  - `/best-time` - Optimal posting time analysis
+  - `/feedback` - User feedback system
+  - `/pricing` - GBP pricing tiers
+- **Environment Configuration**: RUN_SCHEDULER env var guards background scheduler
+- **OpenAI Integration**: Optional with GBP cost estimation (requires OPENAI_API_KEY)
+- **Static Files**: Complete tabbed UI with Compose, Templates, Agent, Best Time, Feedback, Pricing
+- **Dark Theme**: Black/dark-brown with gold accents maintained
 
-## Ready for Next Steps
-1. **UI Testing**: Application ready for full user interface testing
-2. **Post Scheduling**: Ready to test the complete workflow from draft generation to publishing
-3. **OpenAI Integration**: Ready to add OpenAI content generation with GBP cost toggle and safety filter
+## Features Implemented
+1. **Compose Tab**: Generate drafts with OpenAI or stub generator, schedule posts
+2. **Templates Tab**: Browse and render pre-built content templates
+3. **Agent Tab**: Get content advice based on goals and platforms
+4. **Best Time Tab**: Analyze optimal posting times from history
+5. **Feedback Tab**: Collect and display user feedback
+6. **Pricing Tab**: Display GBP pricing tiers and features
+
+## Server Configuration
+- **FastAPI + Uvicorn**: Requires uvicorn for ASGI compatibility (not gunicorn)
+- **Absolute Paths**: Uses BASE_DIR resolution to avoid 500 errors
+- **Environment Variables**: Configurable LLM provider, costs, scheduler
 
 # External Dependencies
 

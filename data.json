@@ -1,5 +1,5 @@
 {
-  "next_post_id": 3,
+  "next_post_id": 4,
   "posts": [
     {
       "id": 1,
@@ -22,6 +22,17 @@
       "error": "missing_access_token",
       "created_at": "2025-08-16T14:09:20.408753+00:00",
       "updated_at": "2025-08-16T14:09:33.738318+00:00"
+    },
+    {
+      "id": 3,
+      "platform": "x",
+      "content": "Puritanical costumes — helpful take #3. Action: reply with your biggest blocker.\n\n#action #biggest #blocker #costumes #helpful",
+      "status": "published",
+      "scheduled_time": "2025-08-16T15:55:31.255315+00:00",
+      "external_id": "x_6755873",
+      "error": null,
+      "created_at": "2025-08-16T15:55:21.255342+00:00",
+      "updated_at": "2025-08-16T15:55:36.064244+00:00"
     }
   ],
   "accounts": {

@@ -1,0 +1,654 @@
+You are Replit Agent. Apply these changes exactly.
+
+A) Dependencies & runtime
+--- file: requirements.txt
+fastapi>=0.111
+uvicorn[standard]>=0.30
+pydantic>=2.7
+openai>=1.40
+
+--- file: .replit
+run = """
+pkill -f gunicorn >/dev/null 2>&1 || true
+python3 -m pip install -U pip >/dev/null 2>&1
+python3 -m pip install -r requirements.txt >/dev/null 2>&1
+uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+"""
+language = "python3"
+
+--- file: .gitignore
+__pycache__/
+*.pyc
+data.json
+.env
+
+B) Backend patch (scheduler guard + OpenAI support + GBP cost estimate)
+Overwrite main.py with EXACT content:
+
+--- file: main.py
+from __future__ import annotations
+
+import os
+import asyncio
+import json
+import math
+import re
+from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone, timedelta
+from pathlib import Path
+from typing import Any, Dict, List, Literal, Optional
+
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse
+from starlette.responses import FileResponse
+from pydantic import BaseModel, Field
+
+# ----- absolute paths -----
+BASE_DIR: Path = Path(__file__).resolve().parent
+STATIC_DIR: Path = BASE_DIR / "static"
+DATA_FILE: Path = BASE_DIR / "data.json"
+
+# ----- env & settings -----
+APP_ENV = os.getenv("APP_ENV", "dev")
+RUN_SCHED = os.getenv("RUN_SCHEDULER", "true").lower() == "true"  # guard scheduler when scaling
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "").lower()              # "openai" to enable remote generation
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o-mini")
+# Cost config in GBP per 1K tokens (set accurate numbers for your model if needed)
+LLM_INPUT_COST_PER_1K_GBP = float(os.getenv("LLM_INPUT_COST_PER_1K_GBP", "0.002"))
+LLM_OUTPUT_COST_PER_1K_GBP = float(os.getenv("LLM_OUTPUT_COST_PER_1K_GBP", "0.006"))
+
+@dataclass
+class PostRecord:
+    id: int
+    platform: str
+    content: str
+    status: Literal["draft", "scheduled", "published", "failed"] = "scheduled"
+    scheduled_time: Optional[str] = None  # ISO UTC
+    external_id: Optional[str] = None
+    error: Optional[str] = None
+    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    updated_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+@dataclass
+class State:
+    next_post_id: int = 1
+    posts: List[PostRecord] = field(default_factory=list)
+    accounts: Dict[str, Dict[str, Optional[str]]] = field(default_factory=dict)
+
+class Store:
+    """Single-file JSON store (simple, no DB)."""
+    def __init__(self, file: Path):
+        self.file = file
+        self.lock = asyncio.Lock()
+        if not file.exists():
+            self._write(State())
+
+    def _read(self) -> State:
+        raw = json.loads(self.file.read_text() or "{}")
+        if not raw:
+            return State()
+        posts = [PostRecord(**p) for p in raw.get("posts", [])]
+        return State(
+            next_post_id=raw.get("next_post_id", 1),
+            posts=posts,
+            accounts=raw.get("accounts", {}),
+        )
+
+    def _write(self, state: State) -> None:
+        payload = {
+            "next_post_id": state.next_post_id,
+            "posts": [asdict(p) for p in state.posts],
+            "accounts": state.accounts,
+        }
+        self.file.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
+
+    async def add_post(self, rec: PostRecord) -> PostRecord:
+        async with self.lock:
+            state = self._read()
+            rec.id = state.next_post_id
+            state.next_post_id += 1
+            state.posts.append(rec)
+            self._write(state)
+            return rec
+
+    async def update_post(self, rec: PostRecord) -> None:
+        async with self.lock:
+            state = self._read()
+            for i, p in enumerate(state.posts):
+                if p.id == rec.id:
+                    state.posts[i] = rec
+                    break
+            self._write(state)
+
+    async def list_posts(self, status: Optional[str] = None) -> List[PostRecord]:
+        async with self.lock:
+            state = self._read()
+            rows = state.posts
+            if status:
+                rows = [p for p in rows if p.status == status]
+            return sorted(rows, key=lambda r: r.created_at, reverse=True)
+
+    async def save_account(self, platform: str, access_token: str, refresh_token: Optional[str]) -> None:
+        async with self.lock:
+            state = self._read()
+            state.accounts[platform] = {
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+            }
+            self._write(state)
+
+    async def get_access_token(self, platform: str) -> Optional[str]:
+        async with self.lock:
+            state = self._read()
+            acc = state.accounts.get(platform)
+            return acc.get("access_token") if acc else None
+
+store = Store(DATA_FILE)
+
+# ----- content helpers (stub) -----
+def _hashtag_suggest(text: str, limit: int = 5) -> List[str]:
+    words = re.findall(r"[A-Za-z][A-Za-z0-9']{3,}", text.lower())
+    stop = {"this", "that", "with", "from", "your", "about", "into", "have"}
+    freq: Dict[str, int] = {}
+    for w in words:
+        if w in stop:
+            continue
+        freq[w] = freq.get(w, 0) + 1
+    ranked = sorted(freq.items(), key=lambda kv: (-kv[1], kv[0]))
+    return [f"#{w}" for w, _ in ranked[:limit]]
+
+def _score(text: str) -> float:
+    length = len(text)
+    score = 0.5
+    if 120 <= length <= 240:
+        score += 0.3
+    if re.search(r"\b(let's|try|do|build|learn|start|join|grab)\b", text.lower()):
+        score += 0.15
+    if re.search(r"[🚀✨🔥✅🎯💡]", text):
+        score += 0.05
+    return round(min(score, 1.0), 2)
+
+def _stub_variants(topic: str, tone: str, count: int) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    for i in range(count):
+        content = f"{topic.strip()} — {tone} take #{i+1}. Action: reply with your biggest blocker."
+        out.append({
+            "content": content,
+            "hashtags": _hashtag_suggest(content),
+            "score": _score(content),
+            "rationale": "length_tune|imperative|emoji_opt",
+            "cost_gbp": 0.0
+        })
+    return out
+
+# ----- OpenAI generation (optional) -----
+def _approx_tokens(text: str) -> int:
+    # quick heuristic ~4 chars/token
+    return max(1, math.ceil(len(text) / 4))
+
+def _estimate_gbp(tokens_in: int, tokens_out: int) -> float:
+    cost = (tokens_in / 1000.0) * LLM_INPUT_COST_PER_1K_GBP + (tokens_out / 1000.0) * LLM_OUTPUT_COST_PER_1K_GBP
+    return round(cost, 4)
+
+async def _openai_variants(topic: str, tone: str, count: int, model: str) -> List[Dict[str, Any]]:
+    if not OPENAI_API_KEY:
+        return _stub_variants(topic, tone, count)
+    try:
+        from openai import OpenAI
+    except Exception:
+        return _stub_variants(topic, tone, count)
+
+    client = OpenAI(api_key=OPENAI_API_KEY)
+    out: List[Dict[str, Any]] = []
+    for i in range(count):
+        user_prompt = (
+            f"Write a single concise, helpful social post about '{topic}'. "
+            f"Tone: {tone}. Audience: general. Keep under 240 characters where reasonable. "
+            f"Add a gentle CTA. Avoid hashtags in the body."
+        )
+        # pre-estimate
+        pre_tokens_in = _approx_tokens(user_prompt)
+        resp = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": "You write high-quality social media posts that are practical and non-salesy."},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.7,
+        )
+        text = (resp.choices[0].message.content or "").strip()
+        usage = getattr(resp, "usage", None)
+        if usage:
+            tokens_in = int(getattr(usage, "prompt_tokens", pre_tokens_in) or pre_tokens_in)
+            tokens_out = int(getattr(usage, "completion_tokens", _approx_tokens(text)) or _approx_tokens(text))
+        else:
+            tokens_in = pre_tokens_in
+            tokens_out = _approx_tokens(text)
+        cost = _estimate_gbp(tokens_in, tokens_out)
+
+        out.append({
+            "content": text,
+            "hashtags": _hashtag_suggest(text),
+            "score": _score(text),
+            "rationale": "llm|scored",
+            "cost_gbp": cost,
+        })
+    return out
+
+# ----- publisher (stub) -----
+def publish_stub(platform: str, content: str, token: Optional[str]) -> tuple[bool, Optional[str], Optional[str]]:
+    if not token:
+        return False, None, "missing_access_token"
+    ext_id = f"{platform}_{abs(hash(content)) % 10_000_000}"
+    return True, ext_id, None
+
+# ----- API schemas -----
+Platform = Literal["x", "linkedin"]
+
+class GenerateRequest(BaseModel):
+    topic: str = Field(..., min_length=2, max_length=500)
+    tone: str = Field(default="helpful")
+    count: int = Field(default=3, ge=1, le=10)
+    provider: Optional[str] = Field(default=None)  # "openai" to force OpenAI; else stub
+    model: Optional[str] = Field(default=None)     # overrides LLM_MODEL
+
+class DraftOut(BaseModel):
+    content: str
+    hashtags: List[str]
+    score: float
+    rationale: str
+    cost_gbp: Optional[float] = None
+
+class CreatePostRequest(BaseModel):
+    platform: Platform
+    content: str = Field(..., min_length=1, max_length=4000)
+    scheduled_time: Optional[datetime] = None  # if None -> now
+
+class PostOut(BaseModel):
+    id: int
+    platform: Platform
+    content: str
+    status: str
+    scheduled_time: Optional[str]
+    external_id: Optional[str]
+    error: Optional[str]
+    created_at: str
+    updated_at: str
+
+class ManualAuthRequest(BaseModel):
+    platform: Platform
+    access_token: str
+    refresh_token: Optional[str] = None
+
+# ----- FastAPI app -----
+app = FastAPI(title="Smart Flow Systems — Social AI", version="0.2.0")
+_scheduler_task: Optional[asyncio.Task] = None
+
+@app.on_event("startup")
+async def _start():
+    global _scheduler_task
+    if RUN_SCHED:
+        _scheduler_task = asyncio.create_task(_scheduler_loop())
+
+@app.on_event("shutdown")
+async def _stop():
+    if RUN_SCHED and _scheduler_task:
+        _scheduler_task.cancel()
+
+@app.get("/healthz")
+async def healthz():
+    return {
+        "ok": True,
+        "brand": "Smart Flow Systems",
+        "env": APP_ENV,
+        "scheduler": RUN_SCHED,
+        "llm": {"provider": LLM_PROVIDER or "stub", "model": LLM_MODEL}
+    }
+
+@app.post("/auth/manual")
+async def manual_auth(req: ManualAuthRequest):
+    await store.save_account(req.platform, req.access_token, req.refresh_token)
+    return {"ok": True, "platform": req.platform}
+
+@app.post("/generate", response_model=List[DraftOut])
+async def generate(req: GenerateRequest):
+    use_openai = (req.provider or LLM_PROVIDER) == "openai"
+    model = req.model or LLM_MODEL
+    if use_openai:
+        drafts = await _openai_variants(req.topic, req.tone, req.count, model)
+    else:
+        drafts = _stub_variants(req.topic, req.tone, req.count)
+    return [DraftOut(**d) for d in drafts]
+
+@app.post("/posts", response_model=PostOut)
+async def create_or_schedule(req: CreatePostRequest):
+    when = req.scheduled_time or datetime.now(timezone.utc) + timedelta(seconds=10)
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    if when < datetime.now(timezone.utc):
+        raise HTTPException(status_code=400, detail="scheduled_time must be in the future")
+    rec = PostRecord(
+        id=0,
+        platform=req.platform,
+        content=req.content.strip(),
+        status="scheduled",
+        scheduled_time=when.isoformat(),
+    )
+    saved = await store.add_post(rec)
+    return PostOut(**asdict(saved))
+
+@app.get("/posts", response_model=List[PostOut])
+async def list_posts(status: Optional[str] = Query(default=None)):
+    rows = await store.list_posts(status=status)
+    return [PostOut(**asdict(r)) for r in rows]
+
+# ----- background publisher -----
+async def _scheduler_loop():
+    while True:
+        try:
+            await _publish_due()
+        except Exception as e:
+            print("scheduler error:", e)
+        await asyncio.sleep(5)
+
+async def _publish_due():
+    now = datetime.now(timezone.utc)
+    rows = await store.list_posts(status="scheduled")
+    for rec in rows:
+        due = datetime.fromisoformat(rec.scheduled_time) if rec.scheduled_time else now
+        if due <= now:
+            token = await store.get_access_token(rec.platform)
+            ok, ext_id, err = publish_stub(rec.platform, rec.content, token)
+            rec.status = "published" if ok else "failed"
+            rec.external_id = ext_id
+            rec.error = err
+            rec.updated_at = datetime.now(timezone.utc).isoformat()
+            await store.update_post(rec)
+
+# ----- static files & index -----
+if not STATIC_DIR.exists():
+    STATIC_DIR.mkdir(parents=True, exist_ok=True)
+
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+@app.get("/")
+async def index():
+    index_path = STATIC_DIR / "index.html"
+    if index_path.exists():
+        return FileResponse(str(index_path))
+    html = f"""<!doctype html><html><body style="font-family:system-ui;padding:24px;color:#eee;background:#111">
+  <h1>Smart Flow Systems</h1>
+  <p>UI file not found at: <code>{index_path}</code></p>
+  <p>Create <code>static/index.html</code> and refresh. Health: <a href="/healthz">/healthz</a></p>
+</body></html>"""
+    return HTMLResponse(html, status_code=200)
+
+C) UI update (OpenAI toggle + model + cost display)
+--- file: static/index.html
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Smart Flow Systems — Social AI</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header class="sfs-header">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">★</span>
+      <h1>Smart Flow Systems</h1>
+    </div>
+    <div class="auth">
+      <select id="platform" aria-label="Platform">
+        <option value="x">X (Twitter)</option>
+        <option value="linkedin">LinkedIn</option>
+      </select>
+      <input id="token" placeholder="Access token (stub)" aria-label="Access token" />
+      <button id="saveToken">Save token</button>
+    </div>
+  </header>
+
+  <main class="grid">
+    <section class="card">
+      <h2>Generate drafts</h2>
+      <form id="genForm">
+        <label>Topic
+          <input id="topic" required placeholder="e.g., AI tips for creators" />
+        </label>
+        <label>Tone
+          <select id="tone">
+            <option>helpful</option>
+            <option>concise</option>
+            <option>friendly</option>
+            <option>bold</option>
+          </select>
+        </label>
+        <div class="row">
+          <label>How many
+            <input id="count" type="number" min="1" max="10" value="3" />
+          </label>
+          <label class="inline">
+            <input id="useOpenAI" type="checkbox" />
+            <span>Use OpenAI</span>
+          </label>
+          <label>Model
+            <input id="model" value="gpt-4o-mini" />
+          </label>
+        </div>
+        <button type="submit">Create drafts</button>
+      </form>
+      <div id="costNote" class="muted"></div>
+      <div id="drafts" class="drafts"></div>
+    </section>
+
+    <section class="card">
+      <h2>Schedule post</h2>
+      <form id="scheduleForm">
+        <label>Platform
+          <select id="schedPlatform">
+            <option value="x">X (Twitter)</option>
+            <option value="linkedin">LinkedIn</option>
+          </select>
+        </label>
+        <label>Content
+          <textarea id="content" rows="6" placeholder="Write or click a draft →"></textarea>
+        </label>
+        <label>When (Europe/London, optional)
+          <input id="when" type="datetime-local" />
+        </label>
+        <button type="submit">Schedule</button>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>Posts</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th><th>Platform</th><th>Status</th><th>Scheduled</th><th>External</th><th>Error</th>
+            </tr>
+          </thead>
+          <tbody id="postsBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Settings (UK)</h2>
+      <div class="settings">
+        <div><strong>Language:</strong> English (UK)</div>
+        <div><strong>Time zone:</strong> Europe/London</div>
+        <div><strong>Currency:</strong> GBP (£)</div>
+        <div class="muted">To enable OpenAI, add an <code>OPENAI_API_KEY</code> secret.</div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="sfs-footer">
+    <span>© <span id="year"></span> Smart Flow Systems</span>
+  </footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
+
+--- file: static/style.css
+:root{
+  --bg:#0a0a0a;
+  --bg2:#1a120b;
+  --panel:#111;
+  --gold:#d4af37;
+  --gold-soft:#c9a227;
+  --text:#e9e3d0;
+  --muted:#a08f75;
+  --border:rgba(212,175,55,0.35);
+  --ring:rgba(212,175,55,0.6);
+}
+*{box-sizing:border-box}html,body{height:100%}
+body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,"Apple Color Emoji","Segoe UI Emoji";background:radial-gradient(1200px 800px at 20% -10%,#20160e 0%,var(--bg) 60%),linear-gradient(180deg,var(--bg2),var(--bg));color:var(--text)}
+.sfs-header,.sfs-footer{border-bottom:1px solid var(--border);background:linear-gradient(180deg,#1b130c,#0a0a0a);padding:12px 18px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10;box-shadow:0 2px 12px rgba(0,0,0,.3)}
+.sfs-footer{position:static;border-top:1px solid var(--border);border-bottom:none;margin-top:24px;background:linear-gradient(180deg,#0a0a0a,#0a0a0a);color:var(--muted);text-align:center;justify-content:center}
+.brand{display:flex;align-items:center;gap:10px}.logo{color:var(--gold);text-shadow:0 0 12px rgba(212,175,55,.7)}
+h1{margin:0;font-size:20px;background:linear-gradient(92deg,var(--gold),#ffec99,var(--gold));-webkit-background-clip:text;background-clip:text;color:transparent;text-shadow:0 0 18px rgba(212,175,55,.2)}
+.auth{display:flex;gap:8px;align-items:center}.auth input,.auth select{background:#0e0e0e;color:var(--text);border:1px solid var(--border);padding:8px 10px;border-radius:8px}
+.auth button{background:linear-gradient(180deg,#1a130b,#0e0e0e);color:var(--text);border:1px solid var(--gold-soft);border-radius:12px;padding:10px 14px;cursor:pointer;font-weight:700;letter-spacing:.3px;box-shadow:0 0 12px rgba(212,175,55,.15)}
+.grid{display:grid;gap:16px;padding:18px;grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}
+.card{background:linear-gradient(180deg,#0f0c09 0%,#0b0b0b 100%);border:1px solid var(--border);border-radius:16px;padding:16px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.03),0 10px 30px rgba(0,0,0,.35)}
+h2{margin-top:0;font-weight:700;letter-spacing:.3px;color:var(--text);border-bottom:1px solid var(--border);padding-bottom:8px}
+label{display:grid;gap:6px;margin:10px 0;color:var(--muted)}
+.row{display:flex;gap:12px;flex-wrap:wrap;align-items:end}.inline{display:flex;gap:8px;align-items:center}
+input,select,textarea,button{font:inherit}
+input,select,textarea{background:#0e0e0e;color:var(--text);border:1px solid var(--border);border-radius:10px;padding:10px 12px;outline:none;transition:box-shadow .2s,border-color .2s}
+input:focus,select:focus,textarea:focus{border-color:var(--gold-soft);box-shadow:0 0 0 3px var(--ring)}
+button{background:linear-gradient(180deg,#1a130b,#0e0e0e);color:var(--text);border:1px solid var(--gold-soft);border-radius:12px;padding:10px 14px;cursor:pointer;font-weight:700;letter-spacing:.3px;transition:transform .06s ease,box-shadow .2s ease,border-color .2s ease;box-shadow:0 0 12px rgba(212,175,55,.15)}
+button:hover{border-color:var(--gold);box-shadow:0 0 18px rgba(212,175,55,.25)}button:active{transform:translateY(1px)}
+.table-wrap{overflow:auto;border:1px solid var(--border);border-radius:12px}table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.06)}th{color:var(--muted);text-align:left}
+.drafts{display:grid;gap:10px}.draft{border:1px solid var(--border);border-radius:12px;padding:12px;background:#0d0b09}
+.draft .meta{color:var(--muted);font-size:12px;display:flex;gap:10px;align-items:center;margin-top:6px}
+.tag{border:1px solid var(--gold-soft);border-radius:999px;padding:2px 8px;font-size:12px;color:#ffe7a1}
+.settings{color:var(--text)}.muted{color:var(--muted);font-size:12px;margin-top:8px}
+
+--- file: static/app.js
+const $ = (sel) => document.querySelector(sel);
+const el = (tag, cls) => { const n = document.createElement(tag); if (cls) n.className = cls; return n; };
+
+const postsBody = $("#postsBody");
+const draftsDiv = $("#drafts");
+const yearSpan = $("#year");
+const costNote = $("#costNote");
+yearSpan && (yearSpan.textContent = new Date().getFullYear());
+
+const fmtDateUK = (iso) => iso ? new Date(iso).toLocaleString("en-GB", {
+  timeZone: "Europe/London", year: "numeric", month: "short", day: "2-digit",
+  hour: "2-digit", minute: "2-digit", hour12: false
+}) : "";
+
+$("#saveToken").addEventListener("click", async () => {
+  const platform = $("#platform").value;
+  const token = $("#token").value.trim();
+  if (!token) { alert("Please enter a token (stub)"); return; }
+  const res = await fetch("/auth/manual", {
+    method: "POST", headers: {"content-type":"application/json"},
+    body: JSON.stringify({ platform, access_token: token })
+  });
+  alert(res.ok ? "Token saved" : "Failed to save token");
+});
+
+$("#genForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  draftsDiv.textContent = "Generating…";
+  costNote.textContent = "";
+  const topic = $("#topic").value.trim();
+  const tone = $("#tone").value;
+  const count = Number($("#count").value || 3);
+  const useOpenAI = $("#useOpenAI").checked;
+  const model = $("#model").value.trim();
+  const body = { topic, tone, count };
+  if (useOpenAI) { body.provider = "openai"; body.model = model; }
+  const res = await fetch("/generate", {
+    method: "POST", headers: {"content-type":"application/json"},
+    body: JSON.stringify(body)
+  });
+  const drafts = await res.json();
+  draftsDiv.innerHTML = "";
+  let total = 0;
+  drafts.forEach((d) => {
+    const card = el("div", "draft");
+    const body = el("div"); body.textContent = d.content;
+    const meta = el("div", "meta");
+    const score = el("span"); score.textContent = `Score: ${d.score}`;
+    meta.appendChild(score);
+    (d.hashtags || []).forEach(t => { const tag = el("span", "tag"); tag.textContent = t; meta.appendChild(tag); });
+    const useBtn = el("button"); useBtn.textContent = "Use this";
+    useBtn.addEventListener("click", () => {
+      $("#content").value = d.content + (d.hashtags?.length ? "\n\n" + d.hashtags.join(" ") : "");
+      $("#schedPlatform").value = $("#platform").value;
+      window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+    });
+    card.append(body, meta, useBtn);
+    draftsDiv.appendChild(card);
+    if (d.cost_gbp) total += Number(d.cost_gbp);
+  });
+  if (total > 0) {
+    costNote.textContent = `Estimated OpenAI cost for this batch: £${total.toFixed(4)} (configurable).`;
+  }
+});
+
+$("#scheduleForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const platform = $("#schedPlatform").value;
+  const content = $("#content").value.trim();
+  const whenRaw = $("#when").value;
+  let scheduled_time = null;
+  if (whenRaw) {
+    const dtLocal = new Date(whenRaw);
+    scheduled_time = new Date(dtLocal.getTime() - dtLocal.getTimezoneOffset() * 60000).toISOString();
+  }
+  const res = await fetch("/posts", {
+    method: "POST", headers: {"content-type":"application/json"},
+    body: JSON.stringify({ platform, content, scheduled_time })
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    alert(err.detail || "Failed to schedule");
+    return;
+  }
+  $("#content").value = ""; $("#when").value = ""; refreshPosts();
+});
+
+async function refreshPosts(){
+  const res = await fetch("/posts");
+  const rows = await res.json();
+  postsBody.innerHTML = "";
+  rows.forEach(r => {
+    const tr = el("tr");
+    const td = (t)=>{ const d=el("td"); d.textContent=t; return d; };
+    tr.append(td(r.id), td(r.platform), td(r.status),
+      td(r.scheduled_time ? fmtDateUK(r.scheduled_time) : ""),
+      td(r.external_id || ""), td(r.error || ""));
+    postsBody.appendChild(tr);
+  });
+}
+setInterval(refreshPosts, 4000); refreshPosts();
+
+D) Workspace env vars (secrets)
+Set these secrets in the Repl:
+- APP_ENV=prod
+- RUN_SCHEDULER=true
+- LLM_PROVIDER=openai      # set to "openai" to use OpenAI, or leave empty for stub
+- LLM_MODEL=gpt-4o-mini
+- LLM_INPUT_COST_PER_1K_GBP=0.002
+- LLM_OUTPUT_COST_PER_1K_GBP=0.006
+# Note: Add OPENAI_API_KEY with your real key to enable OpenAI. If missing, server falls back to stub.
+
+E) Run & verify
+1) Click **Run**; wait for Uvicorn to start.
+2) Open /healthz — should return JSON with scheduler + llm info.
+3) In UI, tick **Use OpenAI**, enter model if needed, generate drafts; if OPENAI_API_KEY is set, you’ll see a GBP estimate.
+4) Schedule a post; confirm it flips to "published" after a short time.
+If anything fails, show console logs and the file list.

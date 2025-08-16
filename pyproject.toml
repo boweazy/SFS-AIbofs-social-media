@@ -15,5 +15,5 @@ dependencies = [
     "pydantic>=2.7",
     "starlette>=0.47.2",
     "uvicorn[standard]>=0.30",
-    "openai>=1.99.9",
+    "openai>=1.40",
 ]

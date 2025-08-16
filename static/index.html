@@ -22,70 +22,154 @@
     </div>
   </header>
 
+  <nav class="tabs">
+    <button data-tab="compose" class="active">Compose</button>
+    <button data-tab="templates">Templates</button>
+    <button data-tab="agent">Agent</button>
+    <button data-tab="besttime">Best Time</button>
+    <button data-tab="feedback">Feedback</button>
+    <button data-tab="pricing">Pricing</button>
+  </nav>
+
   <main class="grid">
-    <section class="card">
-      <h2>Generate drafts</h2>
+    <section class="card tab" id="tab-compose" style="display:block">
+      <h2>Compose</h2>
       <form id="genForm">
         <label>Topic
           <input id="topic" required placeholder="e.g., AI tips for creators" />
         </label>
-        <label>Tone
-          <select id="tone">
-            <option>helpful</option>
-            <option>concise</option>
-            <option>friendly</option>
-            <option>bold</option>
-          </select>
-        </label>
-        <label>How many
-          <input id="count" type="number" min="1" max="10" value="3" />
-        </label>
+        <div class="row">
+          <label>Tone
+            <select id="tone">
+              <option>helpful</option><option>concise</option><option>friendly</option><option>bold</option>
+            </select>
+          </label>
+          <label>How many
+            <input id="count" type="number" min="1" max="10" value="3" />
+          </label>
+          <label class="inline">
+            <input id="useOpenAI" type="checkbox" />
+            <span>Use OpenAI</span>
+          </label>
+          <label>Model
+            <input id="model" value="gpt-4o-mini" />
+          </label>
+        </div>
         <button type="submit">Create drafts</button>
       </form>
+      <div id="costNote" class="muted"></div>
       <div id="drafts" class="drafts"></div>
-    </section>
 
-    <section class="card">
-      <h2>Schedule post</h2>
+      <h3>Schedule</h3>
       <form id="scheduleForm">
-        <label>Platform
-          <select id="schedPlatform">
-            <option value="x">X (Twitter)</option>
-            <option value="linkedin">LinkedIn</option>
-          </select>
-        </label>
+        <div class="row">
+          <label>Platform
+            <select id="schedPlatform">
+              <option value="x">X (Twitter)</option>
+              <option value="linkedin">LinkedIn</option>
+            </select>
+          </label>
+          <label>When (Europe/London, optional)
+            <input id="when" type="datetime-local" />
+          </label>
+        </div>
         <label>Content
           <textarea id="content" rows="6" placeholder="Write or click a draft →"></textarea>
         </label>
-        <label>When (Europe/London, optional)
-          <input id="when" type="datetime-local" />
-        </label>
         <button type="submit">Schedule</button>
       </form>
-    </section>
 
-    <section class="card">
-      <h2>Posts</h2>
+      <h3>Posts</h3>
       <div class="table-wrap">
         <table>
-          <thead>
-            <tr>
-              <th>ID</th><th>Platform</th><th>Status</th><th>Scheduled</th><th>External</th><th>Error</th>
-            </tr>
-          </thead>
+          <thead><tr><th>ID</th><th>Platform</th><th>Status</th><th>Scheduled</th><th>External</th><th>Error</th></tr></thead>
           <tbody id="postsBody"></tbody>
         </table>
       </div>
     </section>
 
-    <section class="card">
-      <h2>Settings (UK)</h2>
-      <div class="settings">
-        <div><strong>Language:</strong> English (UK)</div>
-        <div><strong>Time zone:</strong> Europe/London</div>
-        <div><strong>Currency:</strong> GBP (£)</div>
-        <div class="muted">Prices (if added later) will display in sterling.</div>
+    <section class="card tab" id="tab-templates">
+      <h2>Templates</h2>
+      <div class="row">
+        <label>Filter by purpose
+          <select id="tplPurpose">
+            <option value="">All</option>
+            <option value="lead_gen">Lead gen</option>
+            <option value="announcement">Announcement</option>
+            <option value="educational">Educational</option>
+            <option value="event">Event</option>
+            <option value="testimonial">Testimonial</option>
+            <option value="promotion">Promotion</option>
+            <option value="behind_scenes">Behind the scenes</option>
+          </select>
+        </label>
+        <button id="loadTemplates">Load</button>
       </div>
+      <div id="tplList" class="drafts"></div>
+
+      <h3>Render</h3>
+      <form id="renderForm">
+        <label>Template ID
+          <input id="tplId" placeholder="e.g., lead_gen_1" />
+        </label>
+        <label>Variables (JSON)
+          <textarea id="tplVars" rows="5" placeholder='{"pain":"X","lead_magnet":"guide","benefit":"do Y","cta":"Get it here"}'></textarea>
+        </label>
+        <button type="submit">Render</button>
+      </form>
+      <div id="renderOut"></div>
+    </section>
+
+    <section class="card tab" id="tab-agent">
+      <h2>Agent</h2>
+      <form id="agentForm">
+        <label>Goal
+          <select id="agentGoal">
+            <option value="">General</option>
+            <option value="leads">Leads</option>
+            <option value="launch">Launch</option>
+            <option value="event">Event</option>
+            <option value="education">Education</option>
+          </select>
+        </label>
+        <label>Platform
+          <select id="agentPlatform">
+            <option value="x">X</option><option value="linkedin">LinkedIn</option>
+          </select>
+        </label>
+        <label>Question
+          <input id="agentQ" placeholder="What should I post today?" />
+        </label>
+        <button type="submit">Ask</button>
+      </form>
+      <div id="agentOut"></div>
+    </section>
+
+    <section class="card tab" id="tab-besttime">
+      <h2>Best Time</h2>
+      <button id="loadBestTime">Suggest Slots</button>
+      <ul id="bestSlots"></ul>
+      <div class="muted">Learns from your published posts; uses smart defaults until it has data.</div>
+    </section>
+
+    <section class="card tab" id="tab-feedback">
+      <h2>Feedback</h2>
+      <form id="fbForm">
+        <label>Your name (optional)
+          <input id="fbUser" />
+        </label>
+        <label>Message
+          <textarea id="fbMsg" rows="4" placeholder="Tell us what would help you win…"></textarea>
+        </label>
+        <button type="submit">Send</button>
+      </form>
+      <h3>Latest</h3>
+      <ul id="fbList"></ul>
+    </section>
+
+    <section class="card tab" id="tab-pricing">
+      <h2>Pricing (GBP)</h2>
+      <div id="pricing"></div>
     </section>
   </main>
 
