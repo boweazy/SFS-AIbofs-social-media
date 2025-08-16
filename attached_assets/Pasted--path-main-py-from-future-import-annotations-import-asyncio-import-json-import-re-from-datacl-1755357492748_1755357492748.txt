@@ -1,3 +1,4 @@
+# path: main.py
 from __future__ import annotations
 
 import asyncio
@@ -10,13 +11,14 @@ from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse
 from starlette.responses import FileResponse
 from pydantic import BaseModel, Field
 
-# Use absolute path resolution for static files
+# ----- absolute paths -----
 BASE_DIR: Path = Path(__file__).resolve().parent
-STATIC_DIR = BASE_DIR / "static"
-DATA_FILE = BASE_DIR / "data.json"
+STATIC_DIR: Path = BASE_DIR / "static"
+DATA_FILE: Path = BASE_DIR / "data.json"
 
 @dataclass
 class PostRecord:
@@ -37,7 +39,7 @@ class State:
     accounts: Dict[str, Dict[str, Optional[str]]] = field(default_factory=dict)
 
 class Store:
-    """Single-file JSON store (keeps setup easy)."""
+    """Single-file JSON store (simple, no DB)."""
     def __init__(self, file: Path):
         self.file = file
         self.lock = asyncio.Lock()
@@ -144,7 +146,7 @@ def generate_variants(topic: str, tone: str, count: int) -> List[Dict[str, Any]]
         })
     return out
 
-# ----- stub publisher (safe demo) -----
+# ----- stub publisher -----
 def publish_stub(platform: str, content: str, token: Optional[str]) -> tuple[bool, Optional[str], Optional[str]]:
     if not token:
         return False, None, "missing_access_token"
@@ -221,7 +223,6 @@ async def create_or_schedule(req: CreatePostRequest):
         when = when.replace(tzinfo=timezone.utc)
     if when < datetime.now(timezone.utc):
         raise HTTPException(status_code=400, detail="scheduled_time must be in the future")
-
     rec = PostRecord(
         id=0,
         platform=req.platform,
@@ -237,7 +238,7 @@ async def list_posts(status: Optional[str] = Query(default=None)):
     rows = await store.list_posts(status=status)
     return [PostOut(**asdict(r)) for r in rows]
 
-# background publisher
+# ----- background publisher -----
 async def _scheduler_loop():
     while True:
         try:
@@ -260,16 +261,24 @@ async def _publish_due():
             rec.updated_at = datetime.now(timezone.utc).isoformat()
             await store.update_post(rec)
 
-# static UI - using absolute paths
-if STATIC_DIR.exists():
-    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
-else:
-    print(f"Warning: Static directory {STATIC_DIR} not found")
+# ----- static files & index -----
+# Ensure static dir exists; mount using absolute path.
+if not STATIC_DIR.exists():
+    STATIC_DIR.mkdir(parents=True, exist_ok=True)
+
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 @app.get("/")
 async def index():
-    index_file = STATIC_DIR / "index.html"
-    if index_file.exists():
-        return FileResponse(str(index_file))
-    else:
-        return {"error": "Static files not found", "expected_path": str(STATIC_DIR)}
+    index_path = STATIC_DIR / "index.html"
+    if index_path.exists():
+        return FileResponse(str(index_path))
+    # Fallback page explains the fix (so you don't see a blank 500 page).
+    html = f"""<!doctype html>
+<html><body style="font-family:system-ui;padding:24px;color:#eee;background:#111">
+  <h1>Smart Flow Systems</h1>
+  <p>UI file not found at: <code>{index_path}</code></p>
+  <p>Create <code>static/index.html</code> and refresh, or run <code>ls -R</code> to verify paths.</p>
+  <p>Health: <a href="/healthz">/healthz</a></p>
+</body></html>"""
+    return HTMLResponse(html, status_code=200)

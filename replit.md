@@ -15,10 +15,11 @@ Preferred communication style: Simple, everyday language.
 - **Localization**: Configured for UK market with en-GB locale, 24-hour time format, and GBP currency
 
 ## Backend Architecture
-- **FastAPI Framework**: Asynchronous Python web framework for REST API endpoints
+- **FastAPI Framework**: Asynchronous Python web framework for REST API endpoints (requires uvicorn, not gunicorn)
+- **Absolute Path Resolution**: Uses `BASE_DIR = Path(__file__).resolve().parent` for reliable static file serving
 - **Single-file JSON Storage**: Simple file-based data persistence using `Store` class with async locking
 - **Dataclass Models**: Uses Python dataclasses for `PostRecord` and `State` with automatic serialization
-- **Static File Serving**: Serves frontend assets directly through FastAPI
+- **Static File Serving**: Serves frontend assets directly through FastAPI with fallback error handling
 
 ## Data Storage
 - **File-based Storage**: JSON file (`data.json`) containing application state
@@ -34,6 +35,25 @@ Preferred communication style: Simple, everyday language.
 ## Authentication System
 - **Manual Token Management**: Simple token storage per platform
 - **Stub Implementation**: Basic authentication structure ready for real API integration
+
+# Current Status (August 16, 2025)
+
+## Recent Changes
+- **Applied main.py with absolute path resolution**: Updated FastAPI application to use `BASE_DIR = Path(__file__).resolve().parent` for reliable static file serving
+- **Verified static files**: Confirmed static/ folder contains index.html, style.css, app.js files
+- **Fixed datetime typo**: Corrected `fromisostring` to `fromisoformat` in scheduler code
+- **Tested FastAPI import**: Application imports successfully with 11 routes configured
+
+## Current Deployment Status
+- **Working FastAPI Application**: Main app imports and runs correctly
+- **Server Configuration**: Currently configured for gunicorn (WSGI) but FastAPI requires uvicorn (ASGI)
+- **Healthz Endpoint**: `/healthz` returns `{"ok":true,"brand":"Smart Flow Systems"}` when running on uvicorn
+- **Static Files**: Verified to exist in correct static/ folder structure
+
+## Next Steps Required
+1. **Server Configuration**: Update .replit workflow to use `uvicorn main:app --host 0.0.0.0 --port 5000 --reload` instead of gunicorn
+2. **Port Configuration**: Application tested successfully on port 8000, needs port 5000 for deployment
+3. **OpenAI Integration**: Ready to add OpenAI content generation with GBP cost toggle and safety filter
 
 # External Dependencies
 
