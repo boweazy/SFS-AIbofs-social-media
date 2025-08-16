@@ -1,5 +1,5 @@
 {
-  "next_post_id": 4,
+  "next_post_id": 5,
   "posts": [
     {
       "id": 1,
@@ -33,6 +33,17 @@
       "error": null,
       "created_at": "2025-08-16T15:55:21.255342+00:00",
       "updated_at": "2025-08-16T15:55:36.064244+00:00"
+    },
+    {
+      "id": 4,
+      "platform": "x",
+      "content": "Real DB (SQLite via SQLAlchemy) instead of the in-memory USERS dict\n\t•\t✅ Stripe webhook → persist plan to DB\n\t•\t✅ Onboarding messages (email + SMS) templates + quick send helpers\n\t•\t✅ Minimal auth placeholder so we can map Stripe customer → user",
+      "status": "published",
+      "scheduled_time": "2025-08-16T18:31:34.536298+00:00",
+      "external_id": "x_2358200",
+      "error": null,
+      "created_at": "2025-08-16T18:31:24.536342+00:00",
+      "updated_at": "2025-08-16T18:31:36.435822+00:00"
     }
   ],
   "accounts": {
@@ -40,5 +51,7 @@
       "access_token": "test123",
       "refresh_token": null
     }
-  }
+  },
+  "next_feedback_id": 1,
+  "feedback": []
 }
