@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Smart Flow Systems — Social AI</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header class="sfs-header">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">★</span>
+      <h1>Smart Flow Systems</h1>
+    </div>
+    <div class="auth">
+      <select id="platform" aria-label="Platform">
+        <option value="x">X (Twitter)</option>
+        <option value="linkedin">LinkedIn</option>
+      </select>
+      <input id="token" placeholder="Access token (stub)" aria-label="Access token" />
+      <button id="saveToken">Save token</button>
+    </div>
+  </header>
+
+  <main class="grid">
+    <section class="card">
+      <h2>Generate drafts</h2>
+      <form id="genForm">
+        <label>Topic
+          <input id="topic" required placeholder="e.g., AI tips for creators" />
+        </label>
+        <label>Tone
+          <select id="tone">
+            <option>helpful</option>
+            <option>concise</option>
+            <option>friendly</option>
+            <option>bold</option>
+          </select>
+        </label>
+        <label>How many
+          <input id="count" type="number" min="1" max="10" value="3" />
+        </label>
+        <button type="submit">Create drafts</button>
+      </form>
+      <div id="drafts" class="drafts"></div>
+    </section>
+
+    <section class="card">
+      <h2>Schedule post</h2>
+      <form id="scheduleForm">
+        <label>Platform
+          <select id="schedPlatform">
+            <option value="x">X (Twitter)</option>
+            <option value="linkedin">LinkedIn</option>
+          </select>
+        </label>
+        <label>Content
+          <textarea id="content" rows="6" placeholder="Write or click a draft →"></textarea>
+        </label>
+        <label>When (Europe/London, optional)
+          <input id="when" type="datetime-local" />
+        </label>
+        <button type="submit">Schedule</button>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>Posts</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th><th>Platform</th><th>Status</th><th>Scheduled</th><th>External</th><th>Error</th>
+            </tr>
+          </thead>
+          <tbody id="postsBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Settings (UK)</h2>
+      <div class="settings">
+        <div><strong>Language:</strong> English (UK)</div>
+        <div><strong>Time zone:</strong> Europe/London</div>
+        <div><strong>Currency:</strong> GBP (£)</div>
+        <div class="muted">Prices (if added later) will display in sterling.</div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="sfs-footer">
+    <span>© <span id="year"></span> Smart Flow Systems</span>
+  </footer>
+
+  <script src="/static/script.js"></script>
+</body>
+</html>
