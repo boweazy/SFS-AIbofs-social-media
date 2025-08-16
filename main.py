@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import re
-import threading
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 
-from flask import Flask, request, jsonify, send_from_directory
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.staticfiles import StaticFiles
+from starlette.responses import FileResponse
+from pydantic import BaseModel, Field
 
 DATA_FILE = Path("data.json")
 
@@ -34,7 +37,7 @@ class Store:
     """Single-file JSON store (keeps setup easy)."""
     def __init__(self, file: Path):
         self.file = file
-        self.lock = threading.Lock()
+        self.lock = asyncio.Lock()
         if not file.exists():
             self._write(State())
 
@@ -57,8 +60,8 @@ class Store:
         }
         self.file.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
 
-    def add_post(self, rec: PostRecord) -> PostRecord:
-        with self.lock:
+    async def add_post(self, rec: PostRecord) -> PostRecord:
+        async with self.lock:
             state = self._read()
             rec.id = state.next_post_id
             state.next_post_id += 1
@@ -66,8 +69,8 @@ class Store:
             self._write(state)
             return rec
 
-    def update_post(self, rec: PostRecord) -> None:
-        with self.lock:
+    async def update_post(self, rec: PostRecord) -> None:
+        async with self.lock:
             state = self._read()
             for i, p in enumerate(state.posts):
                 if p.id == rec.id:
@@ -75,16 +78,16 @@ class Store:
                     break
             self._write(state)
 
-    def list_posts(self, status: Optional[str] = None) -> List[PostRecord]:
-        with self.lock:
+    async def list_posts(self, status: Optional[str] = None) -> List[PostRecord]:
+        async with self.lock:
             state = self._read()
             rows = state.posts
             if status:
                 rows = [p for p in rows if p.status == status]
             return sorted(rows, key=lambda r: r.created_at, reverse=True)
 
-    def save_account(self, platform: str, access_token: str, refresh_token: Optional[str]) -> None:
-        with self.lock:
+    async def save_account(self, platform: str, access_token: str, refresh_token: Optional[str]) -> None:
+        async with self.lock:
             state = self._read()
             state.accounts[platform] = {
                 "access_token": access_token,
@@ -92,15 +95,15 @@ class Store:
             }
             self._write(state)
 
-    def get_access_token(self, platform: str) -> Optional[str]:
-        with self.lock:
+    async def get_access_token(self, platform: str) -> Optional[str]:
+        async with self.lock:
             state = self._read()
             acc = state.accounts.get(platform)
             return acc.get("access_token") if acc else None
 
 store = Store(DATA_FILE)
 
-# Content generation functions
+# ----- simple content helpers (non-LLM) -----
 def _hashtag_suggest(text: str, limit: int = 5) -> List[str]:
     words = re.findall(r"[A-Za-z][A-Za-z0-9']{3,}", text.lower())
     stop = {"this", "that", "with", "from", "your", "about", "into", "have"}
@@ -138,113 +141,125 @@ def generate_variants(topic: str, tone: str, count: int) -> List[Dict[str, Any]]
         })
     return out
 
+# ----- stub publisher (safe demo) -----
 def publish_stub(platform: str, content: str, token: Optional[str]) -> tuple[bool, Optional[str], Optional[str]]:
     if not token:
         return False, None, "missing_access_token"
     ext_id = f"{platform}_{abs(hash(content)) % 10_000_000}"
     return True, ext_id, None
 
-# Flask app
-app = Flask(__name__)
+# ----- API schemas -----
+Platform = Literal["x", "linkedin"]
 
-@app.route('/healthz')
-def healthz():
+class GenerateRequest(BaseModel):
+    topic: str = Field(..., min_length=2, max_length=500)
+    tone: str = Field(default="helpful")
+    count: int = Field(default=3, ge=1, le=10)
+
+class DraftOut(BaseModel):
+    content: str
+    hashtags: List[str]
+    score: float
+    rationale: str
+
+class CreatePostRequest(BaseModel):
+    platform: Platform
+    content: str = Field(..., min_length=1, max_length=4000)
+    scheduled_time: Optional[datetime] = None  # if None -> now
+
+class PostOut(BaseModel):
+    id: int
+    platform: Platform
+    content: str
+    status: str
+    scheduled_time: Optional[str]
+    external_id: Optional[str]
+    error: Optional[str]
+    created_at: str
+    updated_at: str
+
+class ManualAuthRequest(BaseModel):
+    platform: Platform
+    access_token: str
+    refresh_token: Optional[str] = None
+
+# ----- FastAPI app -----
+app = FastAPI(title="Smart Flow Systems — Social AI", version="0.1.0")
+_scheduler_task: Optional[asyncio.Task] = None
+
+@app.on_event("startup")
+async def _start():
+    global _scheduler_task
+    _scheduler_task = asyncio.create_task(_scheduler_loop())
+
+@app.on_event("shutdown")
+async def _stop():
+    if _scheduler_task:
+        _scheduler_task.cancel()
+
+@app.get("/healthz")
+async def healthz():
     return {"ok": True, "brand": "Smart Flow Systems"}
 
-@app.route('/auth/manual', methods=['POST'])
-def manual_auth():
-    data = request.get_json()
-    platform = data.get('platform')
-    access_token = data.get('access_token')
-    refresh_token = data.get('refresh_token')
-    
-    store.save_account(platform, access_token, refresh_token)
-    return {"ok": True, "platform": platform}
+@app.post("/auth/manual")
+async def manual_auth(req: ManualAuthRequest):
+    await store.save_account(req.platform, req.access_token, req.refresh_token)
+    return {"ok": True, "platform": req.platform}
 
-@app.route('/generate', methods=['POST'])
-def generate():
-    data = request.get_json()
-    topic = data.get('topic', '')
-    tone = data.get('tone', 'helpful')
-    count = data.get('count', 3)
-    
-    if not topic or len(topic) < 2:
-        return {"detail": "Topic must be at least 2 characters"}, 400
-    
-    drafts = generate_variants(topic, tone, count)
-    return jsonify(drafts)
+@app.post("/generate", response_model=List[DraftOut])
+async def generate(req: GenerateRequest):
+    drafts = generate_variants(req.topic, req.tone, req.count)
+    return [DraftOut(**d) for d in drafts]
 
-@app.route('/posts', methods=['POST'])
-def create_or_schedule():
-    data = request.get_json()
-    platform = data.get('platform')
-    content = data.get('content', '').strip()
-    scheduled_time = data.get('scheduled_time')
-    
-    if not content:
-        return {"detail": "Content cannot be empty"}, 400
-    
-    if scheduled_time:
-        when = datetime.fromisoformat(scheduled_time.replace('Z', '+00:00'))
-    else:
-        when = datetime.now(timezone.utc) + timedelta(seconds=10)
-    
+@app.post("/posts", response_model=PostOut)
+async def create_or_schedule(req: CreatePostRequest):
+    when = req.scheduled_time or datetime.now(timezone.utc) + timedelta(seconds=10)
     if when.tzinfo is None:
         when = when.replace(tzinfo=timezone.utc)
-    
     if when < datetime.now(timezone.utc):
-        return {"detail": "scheduled_time must be in the future"}, 400
+        raise HTTPException(status_code=400, detail="scheduled_time must be in the future")
 
     rec = PostRecord(
         id=0,
-        platform=platform,
-        content=content,
+        platform=req.platform,
+        content=req.content.strip(),
         status="scheduled",
         scheduled_time=when.isoformat(),
     )
-    saved = store.add_post(rec)
-    return jsonify(asdict(saved))
+    saved = await store.add_post(rec)
+    return PostOut(**asdict(saved))
 
-@app.route('/posts', methods=['GET'])
-def list_posts():
-    status = request.args.get('status')
-    rows = store.list_posts(status=status)
-    return jsonify([asdict(r) for r in rows])
+@app.get("/posts", response_model=List[PostOut])
+async def list_posts(status: Optional[str] = Query(default=None)):
+    rows = await store.list_posts(status=status)
+    return [PostOut(**asdict(r)) for r in rows]
 
-@app.route('/static/<path:filename>')
-def static_files(filename):
-    return send_from_directory('static', filename)
-
-@app.route('/')
-def index():
-    return send_from_directory('static', 'index.html')
-
-# Background scheduler
-def scheduler_loop():
+# background publisher
+async def _scheduler_loop():
     while True:
         try:
-            publish_due()
+            await _publish_due()
         except Exception as e:
             print("scheduler error:", e)
-        threading.Event().wait(5)
+        await asyncio.sleep(5)
 
-def publish_due():
+async def _publish_due():
     now = datetime.now(timezone.utc)
-    rows = store.list_posts(status="scheduled")
+    rows = await store.list_posts(status="scheduled")
     for rec in rows:
         due = datetime.fromisoformat(rec.scheduled_time) if rec.scheduled_time else now
         if due <= now:
-            token = store.get_access_token(rec.platform)
+            token = await store.get_access_token(rec.platform)
             ok, ext_id, err = publish_stub(rec.platform, rec.content, token)
             rec.status = "published" if ok else "failed"
             rec.external_id = ext_id
             rec.error = err
             rec.updated_at = datetime.now(timezone.utc).isoformat()
-            store.update_post(rec)
+            await store.update_post(rec)
 
-# Start background scheduler
-scheduler_thread = threading.Thread(target=scheduler_loop, daemon=True)
-scheduler_thread.start()
+# static UI
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+@app.get("/")
+async def index():
+    return FileResponse("static/index.html")

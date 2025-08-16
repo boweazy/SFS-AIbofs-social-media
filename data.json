@@ -1,5 +1,28 @@
 {
-  "next_post_id": 1,
-  "posts": [],
+  "next_post_id": 3,
+  "posts": [
+    {
+      "id": 1,
+      "platform": "x",
+      "content": "Writing a draft for my smart flow systems,",
+      "status": "failed",
+      "scheduled_time": "2025-08-16T14:08:40.588020+00:00",
+      "external_id": null,
+      "error": "missing_access_token",
+      "created_at": "2025-08-16T14:08:30.588056+00:00",
+      "updated_at": "2025-08-16T14:08:43.734945+00:00"
+    },
+    {
+      "id": 2,
+      "platform": "x",
+      "content": "Ai tips for creating — concise take #3. Action: reply with your biggest blocker.",
+      "status": "failed",
+      "scheduled_time": "2025-08-16T14:09:30.408728+00:00",
+      "external_id": null,
+      "error": "missing_access_token",
+      "created_at": "2025-08-16T14:09:20.408753+00:00",
+      "updated_at": "2025-08-16T14:09:33.738318+00:00"
+    }
+  ],
   "accounts": {}
 }
