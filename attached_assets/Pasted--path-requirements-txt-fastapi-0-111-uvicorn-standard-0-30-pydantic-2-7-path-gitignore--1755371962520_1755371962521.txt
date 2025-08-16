@@ -1,3 +1,24 @@
+# path: requirements.txt
+fastapi>=0.111
+uvicorn[standard]>=0.30
+pydantic>=2.7
+
+# path: .gitignore
+__pycache__/
+*.pyc
+data.json
+.env
+
+# path: .replit
+run = """
+pkill -f gunicorn >/dev/null 2>&1 || true
+python3 -m pip install -U pip >/dev/null 2>&1
+python3 -m pip install -r requirements.txt >/dev/null 2>&1
+uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+"""
+language = "python3"
+
+# path: main.py
 from __future__ import annotations
 
 import os
@@ -313,49 +334,11 @@ def _score(text: str) -> float:
     if re.search(r"[🚀✨🔥✅🎯💡]", text): score += 0.05
     return round(min(score, 1.0), 2)
 
-def _approx_tokens(text: str) -> int:
-    return max(1, math.ceil(len(text) / 4))
-
-def _estimate_gbp(tokens_in: int, tokens_out: int) -> float:
-    return round((tokens_in/1000.0)*LLM_INPUT_COST_PER_1K_GBP + (tokens_out/1000.0)*LLM_OUTPUT_COST_PER_1K_GBP, 4)
-
 def generate_variants(topic: str, tone: str, count: int) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     for i in range(count):
         content = f"{topic.strip()} — {tone} take #{i+1}. Action: reply with your biggest blocker."
         out.append({"content": content, "hashtags": _hashtag_suggest(content), "score": _score(content), "rationale": "length_tune|imperative|emoji_opt", "cost_gbp": 0.0})
-    return out
-
-async def _openai_variants(topic: str, tone: str, count: int, model: str) -> List[Dict[str, Any]]:
-    if not OPENAI_API_KEY:
-        return generate_variants(topic, tone, count)
-    try:
-        from openai import OpenAI
-    except Exception:
-        return generate_variants(topic, tone, count)
-
-    client = OpenAI(api_key=OPENAI_API_KEY)
-    out: List[Dict[str, Any]] = []
-    for _ in range(count):
-        user_prompt = (
-            f"Write a single concise, helpful social post about '{topic}'. "
-            f"Tone: {tone}. Under ~240 chars if possible. Include a clear CTA. Avoid hashtags in the body."
-        )
-        pre_in = _approx_tokens(user_prompt)
-        resp = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": "You write practical, on-brand social posts."},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=0.7,
-        )
-        text = (resp.choices[0].message.content or "").strip()
-        usage = getattr(resp, "usage", None)
-        tokens_in = int(getattr(usage, "prompt_tokens", pre_in) or pre_in) if usage else pre_in
-        tokens_out = int(getattr(usage, "completion_tokens", _approx_tokens(text)) or _approx_tokens(text)) if usage else _approx_tokens(text)
-        cost = _estimate_gbp(tokens_in, tokens_out)
-        out.append({"content": text, "hashtags": _hashtag_suggest(text), "score": _score(text), "rationale": "llm|scored", "cost_gbp": cost})
     return out
 
 # Engagement helper
@@ -369,7 +352,7 @@ def generate_replies(context: str, mood: str = "supportive", count: int = 3) -> 
     outs = []
     for i in range(count):
         s = starters[i % len(starters)]
-        outs.append(f"{s} {context.strip()[:120]} What's the one thing you'd do next?")
+        outs.append(f"{s} {context.strip()[:120]} What’s the one thing you’d do next?")
     return outs
 
 # ----- publisher (demo-safe) -----
@@ -382,7 +365,7 @@ def publish_stub(platform: str, content: str, token: Optional[str]) -> Tuple[boo
 # ----- templates (for CX speed) -----
 TEMPLATES: List[Dict[str, Any]] = [
     {"id": "lead_gen_1", "purpose": "lead_gen", "title": "Lead magnet", "template": "Struggling with {pain}? Grab our free {lead_magnet} to {benefit}. {cta}"},
-    {"id": "announcement_1", "purpose": "announcement", "title": "New feature", "template": "We've launched {feature}! It helps you {benefit}. Try it today → {cta}"},
+    {"id": "announcement_1", "purpose": "announcement", "title": "New feature", "template": "We’ve launched {feature}! It helps you {benefit}. Try it today → {cta}"},
     {"id": "educational_1", "purpose": "educational", "title": "Quick how-to", "template": "3 fast steps to {goal}: 1){step1} 2){step2} 3){step3}. Save this. {cta}"},
 ]
 
@@ -396,15 +379,13 @@ def render_template(tpl_id: str, variables: Dict[str, str]) -> str:
             try:
                 return t["template"].format(**variables)
             except KeyError as e:
-                var_name = str(e).strip("'")
-                raise HTTPException(status_code=400, detail=f"Missing variable: {var_name}")
+                raise HTTPException(status_code=400, detail=f"Missing variable: {str(e).strip(\"'\")}")
     for t in asyncio.run(store.list_custom_templates()):
         if t.get("id") == tpl_id:
             try:
                 return t["template"].format(**variables)
             except KeyError as e:
-                var_name = str(e).strip("'")
-                raise HTTPException(status_code=400, detail=f"Missing variable: {var_name}")
+                raise HTTPException(status_code=400, detail=f"Missing variable: {str(e).strip(\"'\")}")
     raise HTTPException(status_code=404, detail="Template not found")
 
 # ----- best-time helpers -----
@@ -510,37 +491,28 @@ class SmartReplyIn(BaseModel):
     mood: str = "supportive"
     count: int = Field(default=3, ge=1, le=10)
 
-class FeedbackIn(BaseModel):
-    user: Optional[str] = None
-    message: str
-    meta: Optional[Dict[str,Any]] = None
-
 # ----- app -----
-fastapi_app = FastAPI(title="Smart Flow Systems — Social AI", version="0.7.0")
+app = FastAPI(title="Smart Flow Systems — Social AI", version="0.7.0")
 _scheduler_task: Optional[asyncio.Task] = None
 
-# WSGI compatibility for gunicorn using a2wsgi
-from a2wsgi import ASGIMiddleware
-app = ASGIMiddleware(fastapi_app)
-
-@fastapi_app.on_event("startup")
+@app.on_event("startup")
 async def _start():
     global _scheduler_task
     if RUN_SCHED:
         _scheduler_task = asyncio.create_task(_scheduler_loop())
 
-@fastapi_app.on_event("shutdown")
+@app.on_event("shutdown")
 async def _stop():
     if RUN_SCHED and _scheduler_task:
         _scheduler_task.cancel()
 
 # ----- health/me/plans/billing -----
-@fastapi_app.get("/healthz")
+@app.get("/healthz")
 async def healthz():
     prof = await store.get_profile()
     return {"ok": True, "brand": "Smart Flow Systems", "env": APP_ENV, "scheduler": RUN_SCHED, "plan": prof.plan}
 
-@fastapi_app.get("/me")
+@app.get("/me")
 async def me():
     prof = await store.get_profile()
     yyyymm = datetime.now(timezone.utc).strftime("%Y%m")
@@ -549,11 +521,11 @@ async def me():
     return {"plan": prof.plan, "usage_this_month": usage, "limit": limit, "entitlements": ENTITLEMENTS[prof.plan],
             "onboarding": prof.onboarding_done, "referral": asdict(prof.referral) if prof.referral else None, "flags": prof.flags}
 
-@fastapi_app.get("/plans")
+@app.get("/plans")
 async def plans():
     return {"currency": "GBP", "plans": ENTITLEMENTS}
 
-@fastapi_app.post("/billing/checkout")
+@app.post("/billing/checkout")
 async def billing_checkout(target_plan: str = "pro"):
     if target_plan not in ENTITLEMENTS:
         raise HTTPException(status_code=400, detail="unknown_plan")
@@ -561,22 +533,22 @@ async def billing_checkout(target_plan: str = "pro"):
     return {"ok": True, "plan": target_plan, "url": "#"}
 
 # ----- core actions -----
-@fastapi_app.post("/auth/manual")
+@app.post("/auth/manual")
 async def manual_auth(req: ManualAuthRequest):
     await store.save_account(req.platform, req.access_token, req.refresh_token)
     return {"ok": True, "platform": req.platform}
 
-@fastapi_app.post("/generate", response_model=List[DraftOut])
+@app.post("/generate", response_model=List[DraftOut])
 async def generate(req: GenerateRequest):
     prof = await store.get_profile()
     if (req.provider or LLM_PROVIDER) == "openai" and not ENTITLEMENTS[prof.plan]["allow_openai"]:
         raise HTTPException(status_code=402, detail="upgrade_required_for_openai")
-    drafts = await _openai_variants(req.topic, req.tone, req.count, LLM_MODEL) if req.provider == "openai" else generate_variants(req.topic, req.tone, req.count)
+    drafts = generate_variants(req.topic, req.tone, req.count)
     # onboarding nudge
     await store.edit(lambda s: s.profile.onboarding_done.__setitem__("generate_draft", True) or None)
     return [DraftOut(**d) for d in drafts]
 
-@fastapi_app.post("/posts", response_model=PostOut)
+@app.post("/posts", response_model=PostOut)
 async def create_or_schedule(req: CreatePostRequest):
     when = req.scheduled_time or datetime.now(timezone.utc) + timedelta(seconds=10)
     if when.tzinfo is None:
@@ -597,24 +569,24 @@ async def create_or_schedule(req: CreatePostRequest):
     await store.edit(lambda s: s.profile.onboarding_done.__setitem__("schedule_post", True) or None)
     return PostOut(**asdict(saved))
 
-@fastapi_app.get("/posts", response_model=List[PostOut])
+@app.get("/posts", response_model=List[PostOut])
 async def list_posts(status: Optional[str] = Query(default=None)):
     rows = await store.list_posts(status=status)
     return [PostOut(**asdict(r)) for r in rows]
 
 # ----- templates & rendering -----
-@fastapi_app.get("/templates")
+@app.get("/templates")
 async def list_templates(purpose: Optional[str] = None):
     built = [t for t in TEMPLATES if (purpose is None or t["purpose"] == purpose)]
     custom = [t for t in await store.list_custom_templates() if (purpose is None or t.get("purpose") == purpose)]
     return {"count": len(built)+len(custom), "templates": built + custom}
 
-@fastapi_app.post("/templates/render")
+@app.post("/templates/render")
 async def render_tpl(req: RenderRequest):
     text = render_template(req.template_id, req.variables)
     return {"content": text, "hashtags": _hashtag_suggest(text), "score": _score(text)}
 
-@fastapi_app.post("/admin/templates", dependencies=[])
+@app.post("/admin/templates", dependencies=[])
 async def add_custom_template(req: AdminTemplateIn, x_admin_token: str = Header(default="")):
     if ADMIN_TOKEN and x_admin_token != ADMIN_TOKEN:
         raise HTTPException(status_code=401, detail="unauthorised")
@@ -622,7 +594,7 @@ async def add_custom_template(req: AdminTemplateIn, x_admin_token: str = Header(
     return {"ok": True}
 
 # ----- best-time & bulk scheduling -----
-@fastapi_app.get("/best-time")
+@app.get("/best-time")
 async def best_time(platform: Optional[Platform] = None, tz: str = "Europe/London"):
     posts = await store.list_posts(status="published")
     slots = _best_time_from_posts(posts) or _best_time_defaults()
@@ -643,7 +615,7 @@ def _cycle_variants(variables: Dict[str, Any], n: int) -> List[Dict[str, str]]:
         out.append(item)
     return out
 
-@fastapi_app.post("/bulk/schedule_from_template")
+@app.post("/bulk/schedule_from_template")
 async def bulk_schedule(req: BulkFromTemplateIn):
     prof = await store.get_profile()
     yyyymm = datetime.now(timezone.utc).strftime("%Y%m")
@@ -678,187 +650,32 @@ async def bulk_schedule(req: BulkFromTemplateIn):
     return {"created": created, "error": None}
 
 # ----- CX: feedback/NPS/referrals/leads/events/onboarding -----
-@fastapi_app.post("/feedback")
-async def leave_feedback(req: FeedbackIn):
-    rec = await store.add_feedback(req.user, req.message.strip(), req.meta)
+@app.post("/feedback")
+async def leave_feedback(user: Optional[str] = None, message: str = "", meta: Optional[str] = None):
+    rec = await store.add_feedback(user, message.strip(), {"raw": meta} if meta else None)
     return {"ok": True, "id": rec.id, "created_at": rec.created_at}
 
-@fastapi_app.get("/feedback")
+@app.get("/feedback")
 async def list_feedback_api():
     rows = await store.list_feedback()
     return {"count": len(rows), "items": [asdict(r) for r in rows]}
 
-@fastapi_app.post("/nps/submit")
+@app.post("/nps/submit")
 async def nps_submit(req: NPSIn):
     rec = await store.add_nps(req.score, req.comment)
     return {"ok": True, "id": rec.id}
 
-@fastapi_app.post("/referrals/create")
+@app.post("/referrals/create")
 async def referrals_create():
     ref = await store.ensure_referral()
     return asdict(ref)
 
-@fastapi_app.post("/referrals/redeem")
+@app.post("/referrals/redeem")
 async def referrals_redeem(code: str):
     ok = await store.use_referral(code)
     return {"ok": ok}
 
-@fastapi_app.get("/referrals/stats")
+@app.get("/referrals/stats")
 async def referrals_stats():
     prof = await store.get_profile()
-    return {"referral": asdict(prof.referral) if prof.referral else None}
-
-@fastapi_app.post("/leads/capture")
-async def leads_capture(req: LeadIn):
-    rec = await store.add_lead(req.name, req.email, req.message)
-    return {"ok": True, "id": rec.id}
-
-@fastapi_app.post("/events/log")
-async def events_log(req: EventIn):
-    if NOTIFY_WEBHOOK_URL:
-        print(f"[WEBHOOK]: {NOTIFY_WEBHOOK_URL} -> {req.type}: {req.meta}")
-    else:
-        print(f"[EVENT]: {req.type}: {req.meta}")
-    return {"ok": True}
-
-@fastapi_app.post("/flags/set")
-async def flags_set(key: str, enabled: bool = True):
-    flags = await store.upsert_flag(key, enabled)
-    return {"flags": flags}
-
-@fastapi_app.get("/onboarding/status")
-async def onboarding_status():
-    prof = await store.get_profile()
-    return {"onboarding": prof.onboarding_done}
-
-# ----- engagement: smart replies -----
-@fastapi_app.post("/engagement/replies")
-async def engagement_replies(req: SmartReplyIn):
-    replies = generate_replies(req.context, req.mood, req.count)
-    return {"replies": replies}
-
-# ----- analytics -----
-@fastapi_app.get("/analytics/kpi")
-async def analytics_kpi():
-    posts = await store.list_posts()
-    total = len(posts)
-    by_status = {}
-    by_platform = {}
-    for p in posts:
-        by_status[p.status] = by_status.get(p.status, 0) + 1
-        by_platform[p.platform] = by_platform.get(p.platform, 0) + 1
-    
-    prof = await store.get_profile()
-    yyyymm = datetime.now(timezone.utc).strftime("%Y%m")
-    usage = prof.usage.get(yyyymm, 0)
-    limit = ENTITLEMENTS[prof.plan]["max_scheduled_per_month"]
-    
-    return {
-        "total_posts": total,
-        "by_status": by_status,
-        "by_platform": by_platform,
-        "current_month": {"usage": usage, "limit": limit, "remaining": max(0, limit - usage)},
-        "plan": prof.plan
-    }
-
-@fastapi_app.get("/analytics/posts_by_month")
-async def analytics_posts_by_month():
-    posts = await store.list_posts()
-    by_month: Dict[str, Dict[str, int]] = {}
-    for p in posts:
-        try:
-            dt = datetime.fromisoformat(p.created_at)
-            month = dt.strftime("%Y-%m")
-            if month not in by_month:
-                by_month[month] = {"total": 0, "published": 0, "failed": 0, "scheduled": 0}
-            by_month[month]["total"] += 1
-            by_month[month][p.status] = by_month[month].get(p.status, 0) + 1
-        except Exception:
-            continue
-    return {"by_month": by_month}
-
-# ----- exports -----
-@fastapi_app.get("/export/posts.csv")
-async def export_posts_csv():
-    posts = await store.list_posts()
-    output = io.StringIO()
-    writer = csv.DictWriter(output, fieldnames=["id", "platform", "content", "status", "scheduled_time", "external_id", "error", "created_at", "updated_at"])
-    writer.writeheader()
-    for p in posts:
-        writer.writerow(asdict(p))
-    
-    return StreamingResponse(
-        io.BytesIO(output.getvalue().encode('utf-8')),
-        media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=posts.csv"}
-    )
-
-@fastapi_app.get("/export/calendar.ics")
-async def export_calendar_ics():
-    posts = await store.list_posts(status="scheduled")
-    ics_content = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Smart Flow Systems//Social AI//EN"]
-    
-    for p in posts:
-        if not p.scheduled_time:
-            continue
-        try:
-            dt = datetime.fromisoformat(p.scheduled_time)
-            dt_str = dt.strftime("%Y%m%dT%H%M%SZ")
-            ics_content.extend([
-                "BEGIN:VEVENT",
-                f"UID:{p.id}@smartflow.systems",
-                f"DTSTART:{dt_str}",
-                f"DTEND:{dt_str}",
-                f"SUMMARY:Post to {p.platform.upper()}",
-                f"DESCRIPTION:{p.content[:100]}...",
-                "END:VEVENT"
-            ])
-        except Exception:
-            continue
-    
-    ics_content.append("END:VCALENDAR")
-    
-    return StreamingResponse(
-        io.BytesIO("\r\n".join(ics_content).encode('utf-8')),
-        media_type="text/calendar",
-        headers={"Content-Disposition": "attachment; filename=calendar.ics"}
-    )
-
-# ----- scheduler -----
-async def _scheduler_loop():
-    while True:
-        try:
-            await _publish_due()
-        except Exception as e:
-            print("scheduler error:", e)
-        await asyncio.sleep(5)
-
-async def _publish_due():
-    now = datetime.now(timezone.utc)
-    rows = await store.list_posts(status="scheduled")
-    for rec in rows:
-        due = datetime.fromisoformat(rec.scheduled_time) if rec.scheduled_time else now
-        if due <= now:
-            token = await store.get_access_token(rec.platform)
-            ok, ext_id, err = publish_stub(rec.platform, rec.content, token)
-            rec.status = "published" if ok else "failed"
-            rec.external_id = ext_id
-            rec.error = err
-            rec.updated_at = datetime.now(timezone.utc).isoformat()
-            await store.update_post(rec)
-
-# Static
-if not STATIC_DIR.exists(): STATIC_DIR.mkdir(parents=True, exist_ok=True)
-fastapi_app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
-
-@fastapi_app.get("/")
-async def index():
-    index_path = STATIC_DIR / "index.html"
-    if index_path.exists(): return FileResponse(str(index_path))
-    html = f"""<!doctype html><html><body style="font-family:system-ui;padding:24px;color:#eee;background:#111">
-      <h1>Smart Flow Systems</h1>
-      <p>UI missing at: <code>{index_path}</code>. Health: <a href="/healthz">/healthz</a></p>
-    </body></html>"""
-    return HTMLResponse(html, status_code=200)
-
-# Note: WSGI compatibility already handled above
+    return {"referral": asdict(prof.ref

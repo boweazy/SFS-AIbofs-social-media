@@ -22,13 +22,24 @@
     </div>
   </header>
 
+  <div id="onboarding" class="onboarding">
+    <h3>Quick Start</h3>
+    <div class="checklist">
+      <div class="check" id="check-connect">✓ Connect account</div>
+      <div class="check" id="check-draft">○ Generate draft</div>
+      <div class="check" id="check-schedule">○ Schedule post</div>
+    </div>
+    <button id="dismissOnboarding">Dismiss</button>
+  </div>
+
   <nav class="tabs">
     <button data-tab="compose" class="active">Compose</button>
     <button data-tab="templates">Templates</button>
-    <button data-tab="agent">Agent</button>
     <button data-tab="besttime">Best Time</button>
-    <button data-tab="feedback">Feedback</button>
-    <button data-tab="pricing">Pricing</button>
+    <button data-tab="feedback">Feedback/NPS</button>
+    <button data-tab="pricing">Pricing/Referral</button>
+    <button data-tab="export">Export</button>
+    <button data-tab="analytics">Analytics</button>
   </nav>
 
   <main class="grid">
@@ -49,7 +60,7 @@
           </label>
           <label class="inline">
             <input id="useOpenAI" type="checkbox" />
-            <span>Use OpenAI</span>
+            <span>Use OpenAI (Pro)</span>
           </label>
           <label>Model
             <input id="model" value="gpt-4o-mini" />
@@ -117,59 +128,158 @@
         </label>
         <button type="submit">Render</button>
       </form>
-      <div id="renderOut"></div>
-    </section>
+      <div id="renderOut" class="drafts"></div>
 
-    <section class="card tab" id="tab-agent">
-      <h2>Agent</h2>
-      <form id="agentForm">
-        <label>Goal
-          <select id="agentGoal">
-            <option value="">General</option>
-            <option value="leads">Leads</option>
-            <option value="launch">Launch</option>
-            <option value="event">Event</option>
-            <option value="education">Education</option>
-          </select>
+      <h3>Bulk Schedule</h3>
+      <form id="bulkForm">
+        <div class="row">
+          <label>Template ID
+            <input id="bulkTplId" placeholder="e.g., lead_gen_1" />
+          </label>
+          <label>Count
+            <input id="bulkCount" type="number" min="1" max="100" value="10" />
+          </label>
+          <label>Platform
+            <select id="bulkPlatform">
+              <option value="x">X (Twitter)</option>
+              <option value="linkedin">LinkedIn</option>
+            </select>
+          </label>
+        </div>
+        <label class="inline">
+          <input id="bulkNextSlot" type="checkbox" checked />
+          <span>Use best time slots</span>
         </label>
-        <label>Platform
-          <select id="agentPlatform">
-            <option value="x">X</option><option value="linkedin">LinkedIn</option>
-          </select>
+        <label>Variables (JSON, use arrays for rotation)
+          <textarea id="bulkVars" rows="4" placeholder='{"pain":["X","Y","Z"],"lead_magnet":"guide","benefit":"solve it","cta":"Get it"}'></textarea>
         </label>
-        <label>Question
-          <input id="agentQ" placeholder="What should I post today?" />
-        </label>
-        <button type="submit">Ask</button>
+        <button type="submit">Bulk Schedule</button>
       </form>
-      <div id="agentOut"></div>
+      <div id="bulkOut" class="drafts"></div>
     </section>
 
     <section class="card tab" id="tab-besttime">
       <h2>Best Time</h2>
       <button id="loadBestTime">Suggest Slots</button>
       <ul id="bestSlots"></ul>
-      <div class="muted">Learns from your published posts; uses smart defaults until it has data.</div>
+
+      <h3>Smart Replies</h3>
+      <form id="repliesForm">
+        <label>Context
+          <textarea id="repliesContext" rows="3" placeholder="Post content or conversation context"></textarea>
+        </label>
+        <div class="row">
+          <label>Mood
+            <select id="repliesMood">
+              <option value="supportive">Supportive</option>
+              <option value="curious">Curious</option>
+              <option value="challenging">Challenging</option>
+            </select>
+          </label>
+          <label>Count
+            <input id="repliesCount" type="number" min="1" max="10" value="3" />
+          </label>
+        </div>
+        <button type="submit">Generate Replies</button>
+      </form>
+      <div id="repliesOut" class="drafts"></div>
     </section>
 
     <section class="card tab" id="tab-feedback">
-      <h2>Feedback</h2>
-      <form id="fbForm">
-        <label>Your name (optional)
-          <input id="fbUser" />
-        </label>
+      <h2>Feedback & NPS</h2>
+      <div class="row">
+        <div class="col">
+          <h3>Feedback</h3>
+          <form id="fbForm">
+            <label>Name (optional)
+              <input id="fbUser" placeholder="Your name" />
+            </label>
+            <label>Message
+              <textarea id="fbMsg" rows="4" placeholder="Your feedback" required></textarea>
+            </label>
+            <button type="submit">Send Feedback</button>
+          </form>
+        </div>
+        <div class="col">
+          <h3>Rate Us (0-10)</h3>
+          <form id="npsForm">
+            <div class="nps-scale">
+              <input type="range" id="npsScore" min="0" max="10" value="7" />
+              <div class="nps-labels">
+                <span>0</span><span id="npsValue">7</span><span>10</span>
+              </div>
+            </div>
+            <label>Comment (optional)
+              <textarea id="npsComment" rows="2" placeholder="What could we improve?"></textarea>
+            </label>
+            <button type="submit">Submit Rating</button>
+          </form>
+        </div>
+      </div>
+
+      <h3>Lead Capture</h3>
+      <form id="leadForm">
+        <div class="row">
+          <label>Name
+            <input id="leadName" placeholder="Your name" />
+          </label>
+          <label>Email
+            <input id="leadEmail" type="email" placeholder="your@email.com" required />
+          </label>
+        </div>
         <label>Message
-          <textarea id="fbMsg" rows="4" placeholder="Tell us what would help you win…"></textarea>
+          <textarea id="leadMsg" rows="2" placeholder="Interested in..."></textarea>
         </label>
-        <button type="submit">Send</button>
+        <button type="submit">Join Newsletter</button>
       </form>
-      <h3>Latest</h3>
-      <ul id="fbList"></ul>
+
+      <h3>Recent Feedback</h3>
+      <div id="fbList"></div>
     </section>
 
     <section class="card tab" id="tab-pricing">
-      <h2>Pricing (GBP)</h2>
+      <h2>Pricing & Referrals</h2>
+      <div id="planStatus" class="plan-status"></div>
       <div id="pricing"></div>
+      
+      <h3>Referral Program</h3>
+      <div id="referralBox">
+        <button id="createReferral">Get Referral Code</button>
+        <div id="referralCode" style="display:none">
+          <p>Your referral code: <code id="refCode"></code></p>
+          <p class="muted">Share this code to earn rewards!</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="card tab" id="tab-export">
+      <h2>Export</h2>
+      <div class="export-buttons">
+        <a href="/export/posts.csv" class="btn" download>Download Posts CSV</a>
+        <a href="/export/calendar.ics" class="btn" download>Download Calendar (ICS)</a>
+      </div>
+      
+      <h3>A/B Experiments</h3>
+      <form id="flagForm">
+        <label>Flag Key
+          <input id="flagKey" placeholder="feature_name" />
+        </label>
+        <label class="inline">
+          <input id="flagEnabled" type="checkbox" />
+          <span>Enabled</span>
+        </label>
+        <button type="submit">Set Flag</button>
+      </form>
+      <div id="flagsOut"></div>
+    </section>
+
+    <section class="card tab" id="tab-analytics">
+      <h2>Analytics</h2>
+      <button id="loadAnalytics">Refresh KPIs</button>
+      <div id="analyticsOut" class="analytics"></div>
+      
+      <h3>Posts by Month</h3>
+      <div id="monthlyOut" class="analytics"></div>
     </section>
   </main>
 

@@ -52,6 +52,14 @@
       "refresh_token": null
     }
   },
-  "next_feedback_id": 1,
-  "feedback": []
+  "next_feedback_id": 2,
+  "feedback": [
+    {
+      "id": 1,
+      "user": null,
+      "message": "User interface friendly , easy access and quick navigation to your site is fire🔥",
+      "meta": null,
+      "created_at": "2025-08-16T19:23:39.742953+00:00"
+    }
+  ]
 }

@@ -16,4 +16,6 @@ dependencies = [
     "starlette>=0.47.2",
     "uvicorn[standard]>=0.30",
     "openai>=1.40",
+    "asgiref>=3.9.1",
+    "a2wsgi>=1.10.10",
 ]

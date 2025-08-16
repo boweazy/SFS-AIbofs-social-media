@@ -39,37 +39,77 @@ Preferred communication style: Simple, everyday language.
 # Current Status (August 16, 2025)
 
 ## Recent Changes
-- **Applied main.py with absolute path resolution**: Updated FastAPI application to use `BASE_DIR = Path(__file__).resolve().parent` for reliable static file serving
-- **Verified static files**: Confirmed static/ folder contains index.html, style.css, app.js files
-- **Fixed datetime typo**: Corrected `fromisostring` to `fromisoformat` in scheduler code
-- **Tested FastAPI import**: Application imports successfully with 11 routes configured
+- **Complete FastAPI Rebuild**: Implemented comprehensive social media management platform with all premium features
+- **WSGI Compatibility Layer**: Added asgiref adapter to run FastAPI with existing gunicorn workflow
+- **Enhanced User Experience**: Complete dark brown/black + shiny gold theme with 7 comprehensive tabs
+- **Comprehensive Feature Set**: All requested premium features including quotas, analytics, exports, and A/B testing
 
 ## Current Deployment Status
-- **FastAPI Application**: Fully implemented with all premium features
-- **New Endpoints Added**:
-  - `/templates` - Browse content templates by purpose
-  - `/templates/render` - Render templates with variables  
-  - `/agent/ask` - AI agent for content advice
-  - `/best-time` - Optimal posting time analysis
-  - `/feedback` - User feedback system
-  - `/pricing` - GBP pricing tiers
-- **Environment Configuration**: RUN_SCHEDULER env var guards background scheduler
-- **OpenAI Integration**: Optional with GBP cost estimation (requires OPENAI_API_KEY)
-- **Static Files**: Complete tabbed UI with Compose, Templates, Agent, Best Time, Feedback, Pricing
-- **Dark Theme**: Black/dark-brown with gold accents maintained
+- **FastAPI Application**: Fully featured social media management platform
+- **Pricing System**: Free plan (30 posts/month) vs Pro plan (300 posts/month) with upgrade-at-point-of-need
+- **Template System**: Built-in templates + custom template CRUD with admin token protection
+- **Analytics & Exports**: Full KPI dashboard, CSV/iCal exports, monthly analytics
+- **Lead Capture**: Newsletter signup, referral system, NPS scoring
+- **Smart Features**: Best-time analysis, bulk scheduling, smart reply generation, A/B experiments
 
-## Features Implemented
-1. **Compose Tab**: Generate drafts with OpenAI or stub generator, schedule posts
-2. **Templates Tab**: Browse and render pre-built content templates
-3. **Agent Tab**: Get content advice based on goals and platforms
-4. **Best Time Tab**: Analyze optimal posting times from history
-5. **Feedback Tab**: Collect and display user feedback
-6. **Pricing Tab**: Display GBP pricing tiers and features
+## Comprehensive Features Implemented
 
-## Server Configuration
-- **FastAPI + Uvicorn**: Requires uvicorn for ASGI compatibility (not gunicorn)
-- **Absolute Paths**: Uses BASE_DIR resolution to avoid 500 errors
-- **Environment Variables**: Configurable LLM provider, costs, scheduler
+### Core Features
+1. **Compose Tab**: 
+   - Generate drafts with OpenAI (Pro) or stub generator (Free)
+   - Real-time cost estimation in GBP
+   - Schedule posts with quota enforcement
+   - Live post status monitoring
+
+2. **Templates Tab**: 
+   - Browse built-in templates by purpose (lead_gen, announcement, educational, etc.)
+   - Render templates with variable substitution
+   - **Bulk Schedule**: Create multiple posts from templates with variable rotation
+   - Admin-only custom template creation (ADMIN_TOKEN required)
+
+3. **Best Time Tab**: 
+   - Analyze optimal posting times from historical data
+   - **Smart Replies**: Generate context-aware comment responses (supportive, curious, challenging)
+   - Default recommendations for new users
+
+4. **Feedback/NPS Tab**: 
+   - User feedback collection with optional names
+   - **NPS Scoring**: 0-10 rating scale with comment capture
+   - **Lead Capture**: Newsletter signup with name/email/message
+   - Recent feedback display
+
+5. **Pricing/Referral Tab**: 
+   - Real-time plan status and quota usage
+   - **Upgrade Flow**: Point-of-need upgrading (demo billing)
+   - **Referral System**: Generate and track referral codes
+   - Clear feature comparison between Free and Pro
+
+6. **Export Tab**: 
+   - **CSV Export**: Download all posts data
+   - **iCal Export**: Calendar file for scheduled posts
+   - **A/B Experiments**: Set feature flags for testing
+   - Flag status monitoring
+
+7. **Analytics Tab**: 
+   - **KPI Dashboard**: Total posts, status breakdown, monthly usage
+   - **Monthly Analytics**: Posts by month with status breakdown
+   - Real-time quota tracking and remaining capacity
+
+### Advanced Features
+- **Quota System**: Enforced monthly limits with upgrade prompts
+- **Onboarding**: Interactive 3-step checklist (connect account, generate draft, schedule post)
+- **Smart Engagement**: Non-LLM reply generation for quick responses
+- **Event Logging**: Optional webhook notifications (NOTIFY_WEBHOOK_URL)
+- **Background Scheduler**: Automatic post publishing with status updates
+- **Responsive Design**: Mobile-optimized dark theme with gold accents
+
+## Technical Architecture
+- **ASGI/WSGI Hybrid**: FastAPI with asgiref compatibility layer for gunicorn
+- **Advanced Data Models**: UserProfile, quotas, referrals, NPS, leads, custom templates
+- **Async Storage**: Thread-safe JSON file operations with asyncio locks
+- **Environment Guards**: RUN_SCHEDULER, ADMIN_TOKEN, NOTIFY_WEBHOOK_URL protection
+- **Absolute Path Resolution**: Reliable static file serving with BASE_DIR
+- **GBP Cost Estimation**: Configurable OpenAI pricing with real-time calculations
 
 # External Dependencies
 
