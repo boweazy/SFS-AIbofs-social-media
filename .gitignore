@@ -1,4 +1,33 @@
+# Replit / Python project ignores
+.replit
+replit.nix
+
+# Virtual environments
+venv/
+env/
+.venv/
 __pycache__/
+
+# Python cache & build
 *.pyc
-data.json
+*.pyo
+*.pyd
+*.db
+*.sqlite3
+*.log
+*.egg-info/
+dist/
+build/
+
+# Environment / secrets
 .env
+*.secret
+*.key
+secrets.json
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Node (if using frontend)
+node_modules/
