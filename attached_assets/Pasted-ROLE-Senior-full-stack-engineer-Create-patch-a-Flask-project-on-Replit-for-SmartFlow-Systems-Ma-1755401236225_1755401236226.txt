@@ -1,0 +1,1005 @@
+ROLE: Senior full-stack engineer. Create/patch a Flask project on Replit for “SmartFlow Systems”.
+Make/overwrite files exactly as specified, install dependencies, run the server on $PORT,
+and print the live URL + quick test steps at the end.
+
+GOALS
+- Flask app with black+gold theme + YOUR LOGO in header
+- Landing + Pricing pages
+- Stripe Checkout (monthly + one-off) + webhook
+- Plan gating (starter/flowkit/launchpack)
+- SQLAlchemy (SQLite)
+- Multi-tenant User Admin MVP (invite → accept, roles, suspend) + Admin UI
+- Email (SMTP) + Vonage SMS
+- Settings → Notifications (email/sms toggles + timing)
+- Bookings + APScheduler reminders (12/24/48h before)
+- Test Booking page (no Postman needed)
+- GitHub-ready (.gitignore, no secrets committed)
+
+========================================
+1) .gitignore  (create/overwrite)
+========================================
+# Replit / Python project ignores
+.replit
+replit.nix
+
+# Virtual environments
+venv/
+env/
+.venv/
+__pycache__/
+
+# Python cache & build
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.sqlite3
+*.log
+*.egg-info/
+dist/
+build/
+
+# Environment / secrets
+.env
+*.secret
+*.key
+secrets.json
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Node (if frontend added later)
+node_modules/
+
+========================================
+2) requirements.txt  (create/overwrite)
+========================================
+Flask>=3.0.0
+gunicorn>=21.2.0
+stripe>=6.0.0
+python-dotenv>=1.0.1
+SQLAlchemy>=2.0.30
+Flask-SQLAlchemy>=3.1.1
+itsdangerous>=2.2.0
+requests>=2.32.0
+# Optional Google (later)
+google-api-python-client>=2.124.0
+google-auth>=2.31.0
+google-auth-oauthlib>=1.2.0
+# SMS: Vonage (Twilio removed)
+vonage>=3.15.0
+# Scheduler
+APScheduler>=3.10.4
+
+Install dependencies.
+
+========================================
+3) Project structure (create)
+========================================
+- Ensure folders: static/, templates/
+- Create placeholder logo at static/logo.png (simple 1x1 PNG). NOTE for user: they will upload real logo over it.
+
+========================================
+4) config.py  (create/overwrite)
+========================================
+import os
+
+class Config:
+    # Flask
+    FLASK_SECRET_KEY = os.getenv("FLASK_SECRET_KEY", "fallback-secret")
+    DEBUG = os.getenv("DEBUG", "False").lower() in ("true","1","yes")
+
+    # Admin (for lightweight password gate)
+    ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "changeme")
+
+    # Database
+    SQLALCHEMY_DATABASE_URI = os.getenv("DATABASE_URL", "sqlite:///smartflow.db")
+    SQLALCHEMY_TRACK_MODIFICATIONS = False
+
+    # Stripe
+    STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY")
+    STRIPE_PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY")
+    STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
+
+    # Stripe Price IDs
+    STRIPE_PRICE_STARTER_MONTHLY     = os.getenv("STRIPE_PRICE_STARTER_MONTHLY")
+    STRIPE_PRICE_FLOWKIT_MONTHLY     = os.getenv("STRIPE_PRICE_FLOWKIT_MONTHLY")
+    STRIPE_PRICE_LAUNCHPACK_MONTHLY  = os.getenv("STRIPE_PRICE_LAUNCHPACK_MONTHLY")
+    STRIPE_PRICE_STARTER_ONEOFF      = os.getenv("STRIPE_PRICE_STARTER_ONEOFF")
+    STRIPE_PRICE_FLOWKIT_ONEOFF      = os.getenv("STRIPE_PRICE_FLOWKIT_ONEOFF")
+    STRIPE_PRICE_LAUNCHPACK_ONEOFF   = os.getenv("STRIPE_PRICE_LAUNCHPACK_ONEOFF")
+
+    # Email (SMTP)
+    SMTP_HOST = os.getenv("SMTP_HOST")
+    SMTP_PORT = int(os.getenv("SMTP_PORT","587"))
+    SMTP_USER = os.getenv("SMTP_USER")
+    SMTP_PASS = os.getenv("SMTP_PASS")
+    SMTP_FROM = os.getenv("SMTP_FROM","no-reply@smartflowsystems.com")
+
+    # SMS: Vonage (Nexmo)
+    VONAGE_API_KEY    = os.getenv("VONAGE_API_KEY")
+    VONAGE_API_SECRET = os.getenv("VONAGE_API_SECRET")
+    VONAGE_NUMBER     = os.getenv("VONAGE_NUMBER")
+
+# Feature gating by plan
+FEATURES_BY_PLAN = {
+    "starter":   ["booking","basic_ai_bot","one_template"],
+    "flowkit":   ["booking","ai_scheduler","sms","portal","two_templates","reports"],
+    "launchpack":["booking","ai_scheduler","sms","portal","reports",
+                  "ai_concierge","analytics","recovery","automations","three_templates","priority_support"]
+}
+
+========================================
+5) db_models.py  (create/overwrite)
+========================================
+from flask_sqlalchemy import SQLAlchemy
+from datetime import datetime
+from sqlalchemy import UniqueConstraint
+
+db = SQLAlchemy()
+
+class Tenant(db.Model):
+    __tablename__ = "tenants"
+    id = db.Column(db.String(64), primary_key=True)
+    name = db.Column(db.String(200), nullable=False)
+    owner_user_id = db.Column(db.String(64), index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class User(db.Model):
+    __tablename__ = "users"
+    id = db.Column(db.String(64), primary_key=True)
+    email = db.Column(db.String(255), unique=True, index=True, nullable=False)
+    name = db.Column(db.String(200))
+    status = db.Column(db.String(20), default="active") # active|suspended|deleted
+    stripe_customer_id = db.Column(db.String(128), unique=True, index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class Membership(db.Model):
+    __tablename__ = "memberships"
+    tenant_id = db.Column(db.String(64), db.ForeignKey("tenants.id"), primary_key=True)
+    user_id   = db.Column(db.String(64), db.ForeignKey("users.id"), primary_key=True)
+    role      = db.Column(db.String(20), default="staff") # owner|admin|staff|analyst
+    invited_at   = db.Column(db.DateTime)
+    activated_at = db.Column(db.DateTime)
+
+class Invitation(db.Model):
+    __tablename__ = "invitations"
+    id = db.Column(db.String(64), primary_key=True)
+    tenant_id = db.Column(db.String(64), db.ForeignKey("tenants.id"))
+    email = db.Column(db.String(255), index=True, nullable=False)
+    role  = db.Column(db.String(20), nullable=False)
+    token = db.Column(db.String(512), nullable=False)
+    expires_at = db.Column(db.DateTime, nullable=False)
+    status = db.Column(db.String(20), default="pending") # pending|accepted|expired
+    inviter_user_id = db.Column(db.String(64))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class AuditLog(db.Model):
+    __tablename__ = "audit_logs"
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    tenant_id = db.Column(db.String(64), index=True)
+    actor_user_id = db.Column(db.String(64), index=True)
+    action = db.Column(db.String(64))
+    target_type = db.Column(db.String(64))
+    target_id = db.Column(db.String(64))
+    metadata = db.Column(db.Text)   # JSON string
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class NotificationSettings(db.Model):
+    __tablename__ = "notification_settings"
+    tenant_id = db.Column(db.String(64), db.ForeignKey("tenants.id"), primary_key=True)
+    email_enabled = db.Column(db.Boolean, default=True)
+    sms_enabled = db.Column(db.Boolean, default=False)
+    reminder_hours_before = db.Column(db.Integer, default=24)
+
+class Booking(db.Model):
+    __tablename__ = "bookings"
+    id = db.Column(db.String(64), primary_key=True)
+    tenant_id = db.Column(db.String(64), db.ForeignKey("tenants.id"), index=True)
+    customer_name = db.Column(db.String(200))
+    customer_email = db.Column(db.String(255))
+    customer_phone = db.Column(db.String(40))
+    start_at = db.Column(db.DateTime, index=True)  # UTC
+    status = db.Column(db.String(20), default="confirmed")  # confirmed|cancelled|completed
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class ReminderLog(db.Model):
+    __tablename__ = "reminder_logs"
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    tenant_id = db.Column(db.String(64), index=True)
+    booking_id = db.Column(db.String(64), index=True)
+    channel = db.Column(db.String(10))  # email|sms
+    kind = db.Column(db.String(20), default="before")  # before|after
+    sent_at = db.Column(db.DateTime, default=datetime.utcnow)
+    __table_args__ = (UniqueConstraint('booking_id','channel','kind', name='uix_booking_channel_kind'),)
+
+========================================
+6) onboarding.py  (create/overwrite)
+========================================
+import smtplib
+from email.mime.text import MIMEText
+from config import Config
+
+def send_email_smtp(to_email: str, subject: str, body: str):
+    if not (Config.SMTP_HOST and Config.SMTP_USER and Config.SMTP_PASS):
+        print("[email] SMTP not configured; skipping.")
+        return
+    msg = MIMEText(body, "plain", "utf-8")
+    msg["Subject"] = subject
+    msg["From"] = Config.SMTP_FROM
+    msg["To"] = to_email
+    with smtplib.SMTP(Config.SMTP_HOST, Config.SMTP_PORT) as server:
+        server.starttls()
+        server.login(Config.SMTP_USER, Config.SMTP_PASS)
+        server.sendmail(Config.SMTP_FROM, [to_email], msg.as_string())
+
+def onboarding_email(plan: str):
+    return f"""Welcome to SmartFlow Systems 👋
+
+You're on the '{plan.title()}' plan.
+
+Next steps:
+1) Connect Google Calendar
+2) Add brand colours (black+gold)
+3) Enable reminders in Settings → Notifications
+— Team SmartFlow
+"""
+
+========================================
+7) sms.py  (create/overwrite) — Vonage
+========================================
+import vonage
+from typing import Optional
+from config import Config
+
+_client: Optional[vonage.Client] = None
+_sms: Optional[vonage.Sms] = None
+
+def _ensure_client():
+    global _client, _sms
+    if _client is None:
+        if not (Config.VONAGE_API_KEY and Config.VONAGE_API_SECRET and Config.VONAGE_NUMBER):
+            return False
+        _client = vonage.Client(key=Config.VONAGE_API_KEY, secret=Config.VONAGE_API_SECRET)
+        _sms = vonage.Sms(_client)
+    return True
+
+def send_sms(to_number: str, message: str) -> bool:
+    if not _ensure_client():
+        print("[sms] Vonage not configured; skipping.")
+        return False
+    try:
+        resp = _sms.send_message({"from": Config.VONAGE_NUMBER, "to": to_number, "text": message})
+        status = resp["messages"][0].get("status")
+        if status == "0":
+            print("[sms] sent.")
+            return True
+        print("[sms] failed:", resp["messages"][0].get("error-text"))
+        return False
+    except Exception as e:
+        print("[sms] exception:", e)
+        return False
+
+========================================
+8) app.py  (create/overwrite)
+========================================
+import os, json, uuid, base64
+from datetime import datetime, timedelta
+from functools import wraps
+from flask import Flask, request, jsonify, render_template_string, redirect, send_from_directory
+from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
+from apscheduler.schedulers.background import BackgroundScheduler
+import stripe
+
+from config import Config, FEATURES_BY_PLAN
+from db_models import db, Tenant, User, Membership, Invitation, AuditLog, NotificationSettings, Booking, ReminderLog
+from onboarding import send_email_smtp, onboarding_email
+from sms import send_sms
+
+app = Flask(__name__)
+app.secret_key = Config.FLASK_SECRET_KEY
+app.config["SQLALCHEMY_DATABASE_URI"] = Config.SQLALCHEMY_DATABASE_URI
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = Config.SQLALCHEMY_TRACK_MODIFICATIONS
+
+# Static directory (for your logo)
+@app.get("/static/<path:filename>")
+def static_files(filename):
+    return send_from_directory("static", filename)
+
+db.init_app(app)
+with app.app_context():
+    db.create_all()
+    # create tiny placeholder logo if none present
+    logo_path = os.path.join("static","logo.png")
+    if not os.path.exists(logo_path):
+        os.makedirs("static", exist_ok=True)
+        with open(logo_path,"wb") as f:
+            f.write(b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc`\x00\x00\x00\x02\x00\x01\xe2!\xbc3\x00\x00\x00\x00IEND\xaeB`\x82")
+
+stripe.api_key = Config.STRIPE_SECRET_KEY
+signer = URLSafeTimedSerializer(app.secret_key)
+
+# ---------- Helpers ----------
+def require_admin(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        pwd = request.args.get("p") or request.headers.get("X-Admin-Password")
+        if pwd != Config.ADMIN_PASSWORD:
+            return ("Forbidden: add ?p=<password> or X-Admin-Password header", 403)
+        return fn(*args, **kwargs)
+    return wrapper
+
+def get_current_user():
+    # Demo seed: one user + tenant
+    u = User.query.filter_by(email="demo@smartflowsystems.com").first()
+    if not u:
+        u = User(id="demo-user", email="demo@smartflowsystems.com", name="Demo User")
+        db.session.add(u); db.session.commit()
+    t = Tenant.query.filter_by(id="demo-tenant").first()
+    if not t:
+        t = Tenant(id="demo-tenant", name="Demo Workspace", owner_user_id=u.id)
+        db.session.add(t); db.session.commit()
+        m = Membership(tenant_id=t.id, user_id=u.id, role="owner",
+                       invited_at=datetime.utcnow(), activated_at=datetime.utcnow())
+        db.session.add(m); db.session.commit()
+    return u, t
+
+def log_action(tenant_id, actor_user_id, action, target_type, target_id, metadata=None):
+    rec = AuditLog(tenant_id=tenant_id, actor_user_id=actor_user_id, action=action,
+                   target_type=target_type, target_id=target_id, metadata=json.dumps(metadata or {}))
+    db.session.add(rec); db.session.commit()
+
+def get_or_create_notif_settings(tenant_id: str) -> NotificationSettings:
+    s = NotificationSettings.query.get(tenant_id)
+    if not s:
+        s = NotificationSettings(tenant_id=tenant_id)
+        db.session.add(s); db.session.commit()
+    return s
+
+def notif_ok(tenant_id: str, channel: str) -> bool:
+    s = get_or_create_notif_settings(tenant_id)
+    if channel == "email":
+        return bool(s.email_enabled)
+    if channel == "sms":
+        has_keys = bool(Config.VONAGE_API_KEY and Config.VONAGE_API_SECRET and Config.VONAGE_NUMBER)
+        return bool(s.sms_enabled and has_keys)
+    return False
+
+def seat_limit_for_plan(plan:str) -> int:
+    return {"starter":2,"flowkit":5,"launchpack":15}.get(plan, 2)
+
+def tenant_active_seats(tenant_id:str) -> int:
+    return Membership.query.filter_by(tenant_id=tenant_id).count()
+
+def _price_for(plan, mode):
+    mapping = {
+        ("starter","monthly"):  Config.STRIPE_PRICE_STARTER_MONTHLY,
+        ("flowkit","monthly"):  Config.STRIPE_PRICE_FLOWKIT_MONTHLY,
+        ("launchpack","monthly"): Config.STRIPE_PRICE_LAUNCHPACK_MONTHLY,
+        ("starter","oneoff"):   Config.STRIPE_PRICE_STARTER_ONEOFF,
+        ("flowkit","oneoff"):   Config.STRIPE_PRICE_FLOWKIT_ONEOFF,
+        ("launchpack","oneoff"): Config.STRIPE_PRICE_LAUNCHPACK_ONEOFF,
+    }
+    return mapping.get((plan,mode))
+
+# ---------- UI: Landing & Pricing (black + gold + your logo) ----------
+LANDING = """
+<!doctype html><html><head><meta charset="utf-8"><title>SmartFlow Systems</title>
+<style>
+body{margin:0;font-family:system-ui,Arial;background:#0E0B0B;color:#EDEAE6}
+header,footer{padding:24px;text-align:center;border-bottom:1px solid #2A221B}
+footer{border-top:1px solid #2A221B;border-bottom:none;color:#8C7A5A}
+.container{max-width:1100px;margin:0 auto;padding:32px 18px}
+.gold{color:#D4AF37}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}
+.card{background:#171311;border:1px solid #2A221B;border-radius:14px;padding:18px}
+.btn{display:inline-block;padding:10px 14px;border:1px solid #D4AF37;color:#D4AF37;text-decoration:none;border-radius:10px}
+.btn:hover{background:#D4AF37;color:#0E0B0B}
+.price{font-size:22px;margin:4px 0 10px}
+img.logo{height:64px;display:block;margin:0 auto 8px}
+</style></head><body>
+<header>
+  <img class="logo" src="/static/logo.png" alt="SmartFlow Systems">
+  <p>The system that runs your business.</p>
+</header>
+<div class="container">
+  <div class="grid">
+    <div class="card"><h3 class="gold">Smart Booking</h3><p>Stripe deposits, Calendar sync, no-show reminders.</p></div>
+    <div class="card"><h3 class="gold">AI Social</h3><p>Captions + schedule + niche hashtags.</p></div>
+    <div class="card"><h3 class="gold">Premium Brand</h3><p>Black & gold visuals + client portal that converts.</p></div>
+  </div>
+  <div style="margin-top:18px">
+    <a class="btn" href="/pricing">See Pricing</a>
+  </div>
+</div>
+<footer>© SmartFlow Systems</footer></body></html>
+"""
+
+PRICING = """
+<!doctype html><html><head><meta charset="utf-8"><title>Pricing — SmartFlow</title>
+<style>body{margin:0;font-family:system-ui,Arial;background:#0E0B0B;color:#EDEAE6}
+.container{max-width:1100px;margin:0 auto;padding:32px 18px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}
+.card{background:#161210;border:1px solid #2A221B;border-radius:14px;padding:18px}
+h2,h4{color:#D4AF37;margin:0 0 6px}.price{font-size:22px;margin:4px 0 10px}
+.btn{display:inline-block;padding:10px 14px;border:1px solid #D4AF37;color:#D4AF37;text-decoration:none;border-radius:10px}
+.btn:hover{background:#D4AF37;color:#0E0B0B}</style></head><body>
+<div class="container">
+  <img class="logo" src="/static/logo.png" alt="SmartFlow Systems" style="height:56px;margin-bottom:12px">
+  <h2>Plans</h2>
+  <div class="grid">
+    <div class="card">
+      <h4>Smart Starter</h4><div class="price">£49/mo · £399 one-off</div>
+      <ul><li>1-page site</li><li>Stripe deposits</li><li>Calendar sync</li><li>Basic AI FAQ bot</li></ul>
+      <a class="btn" href="/checkout?plan=starter&mode=monthly">Start Monthly</a>
+      <a class="btn" href="/checkout?plan=starter&mode=oneoff">One-Off</a>
+    </div>
+    <div class="card">
+      <h4>The Flow Kit</h4><div class="price">£149/mo · £999 one-off</div>
+      <ul><li>AI scheduler</li><li>SMS reminders</li><li>Client portal</li></ul>
+      <a class="btn" href="/checkout?plan=flowkit&mode=monthly">Start Monthly</a>
+      <a class="btn" href="/checkout?plan=flowkit&mode=oneoff">One-Off</a>
+    </div>
+    <div class="card">
+      <h4>Salon Launch Pack</h4><div class="price">£299/mo · £1,999 one-off</div>
+      <ul><li>AI Concierge + analytics</li><li>Recovery automations</li><li>Priority support</li></ul>
+      <a class="btn" href="/checkout?plan=launchpack&mode=monthly">Start Monthly</a>
+      <a class="btn" href="/checkout?plan=launchpack&mode=oneoff">One-Off</a>
+    </div>
+  </div>
+</div></body></html>
+"""
+
+@app.get("/")
+def home(): return render_template_string(LANDING)
+
+@app.get("/pricing")
+def pricing(): return render_template_string(PRICING)
+
+# ---------- Plan gating ----------
+@app.get("/feature/<name>")
+def feature_access(name):
+    user, tenant = get_current_user()
+    last = AuditLog.query.filter_by(tenant_id=tenant.id, action="plan_set").order_by(AuditLog.id.desc()).first()
+    current_plan = (json.loads(last.metadata).get("plan") if last else "starter")
+    ok = name in FEATURES_BY_PLAN.get(current_plan, [])
+    return (jsonify({"ok":True,"feature":name,"plan":current_plan})
+            if ok else (jsonify({"ok":False,"error":"Upgrade required","plan":current_plan}), 402))
+
+# ---------- Stripe Checkout + Webhook ----------
+@app.get("/checkout")
+def checkout_redirect():
+    plan = request.args.get("plan","starter")
+    mode = request.args.get("mode","monthly")
+    price_id = _price_for(plan, mode)
+    if not price_id: return "Price not configured", 400
+    user, tenant = get_current_user()
+    session = stripe.checkout.Session.create(
+        mode="subscription" if mode=="monthly" else "payment",
+        line_items=[{"price": price_id, "quantity": 1}],
+        success_url=request.host_url + "success?session_id={CHECKOUT_SESSION_ID}",
+        cancel_url=request.host_url + "pricing",
+        customer_email=user.email,
+        metadata={"tenant_id":tenant.id,"app_user_id":user.id,"plan":plan,"mode":mode},
+    )
+    return redirect(session.url, code=303)
+
+@app.get("/success")
+def success():
+    return "Payment successful — onboarding by email. Try /feature/ai_concierge (Launch Pack unlock)."
+
+@app.post("/webhooks/stripe")
+def stripe_webhook():
+    payload = request.data
+    sig = request.headers.get("Stripe-Signature")
+    try:
+        event = stripe.Webhook.construct_event(payload, sig, Config.STRIPE_WEBHOOK_SECRET)
+    except Exception as e:
+        return str(e), 400
+    if event["type"] == "checkout.session.completed":
+        session = event["data"]["object"]
+        meta = session.get("metadata") or {}
+        tenant_id = meta.get("tenant_id")
+        plan = meta.get("plan","starter")
+        log_action(tenant_id, meta.get("app_user_id"), "plan_set", "tenant", tenant_id, {"plan": plan})
+        if notif_ok(tenant_id, "email"):
+            try:
+                send_email_smtp(session["customer_details"]["email"], "Your SmartFlow plan is live", onboarding_email(plan))
+            except Exception as e:
+                print("[onboarding email] error:", e)
+    return "", 200
+
+# ---------- User Admin: Invite/Accept, List, Update ----------
+def generate_invite_token(payload:dict, expires_minutes=30):
+    return signer.dumps(payload), datetime.utcnow() + timedelta(minutes=expires_minutes)
+
+@app.post("/tenants/<tenant_id>/invites")
+@require_admin
+def create_invite(tenant_id):
+    actor, tenant = get_current_user()
+    if tenant_id != tenant.id: return ("Forbidden", 403)
+    last = AuditLog.query.filter_by(tenant_id=tenant.id, action="plan_set").order_by(AuditLog.id.desc()).first()
+    plan = (json.loads(last.metadata).get("plan") if last else "starter")
+    if tenant_active_seats(tenant_id) >= seat_limit_for_plan(plan):
+        return (jsonify({"ok":False,"error":"Seat limit reached. Upgrade plan."}), 402)
+    data = request.get_json() or {}
+    email = data.get("email"); role = data.get("role","staff")
+    if not email: return ("email required", 400)
+    token, exp = generate_invite_token({"tenant_id":tenant_id,"email":email,"role":role})
+    inv = Invitation(id=str(uuid.uuid4()), tenant_id=tenant_id, email=email, role=role,
+                     token=token, expires_at=exp, inviter_user_id=actor.id)
+    db.session.add(inv); db.session.commit()
+    link = request.host_url + "auth/accept?token=" + token
+    try: send_email_smtp(email, "You're invited to SmartFlow", f"Join: {link}")
+    except Exception as e: print("[invite email] error:", e)
+    log_action(tenant_id, actor.id, "user.invited", "user", email, {"role":role})
+    return jsonify({"ok":True,"invite_link":link})
+
+@app.get("/auth/accept")
+def accept_invite():
+    token = request.args.get("token")
+    try:
+        data = signer.loads(token, max_age=60*30)
+    except SignatureExpired: return "Invite expired", 410
+    except BadSignature: return "Invalid token", 400
+    tenant_id = data["tenant_id"]; email = data["email"]; role = data["role"]
+    u = User.query.filter_by(email=email).first()
+    if not u:
+        u = User(id=email, email=email, name=email.split("@")[0])
+        db.session.add(u); db.session.commit()
+    m = Membership.query.filter_by(tenant_id=tenant_id, user_id=u.id).first()
+    if not m:
+        m = Membership(tenant_id=tenant_id, user_id=u.id, role=role,
+                       invited_at=datetime.utcnow(), activated_at=datetime.utcnow())
+        db.session.add(m); db.session.commit()
+    log_action(tenant_id, u.id, "user.invite.accepted", "user", u.id, {"role":role})
+    return "Invite accepted. You can close this page."
+
+@app.patch("/tenants/<tenant_id>/users/<user_id>")
+@require_admin
+def change_role_or_suspend(tenant_id, user_id):
+    actor, tenant = get_current_user()
+    if tenant_id != tenant.id: return ("Forbidden", 403)
+    data = request.get_json() or {}
+    u = User.query.get(user_id)
+    if not u: return ("User not found", 404)
+    updates = {}
+    if "role" in data:
+        m = Membership.query.filter_by(tenant_id=tenant_id, user_id=user_id).first()
+        if not m: return ("Membership not found", 404)
+        old = m.role; m.role = data["role"]; db.session.commit()
+        updates["role_before"] = old; updates["role_after"] = m.role
+        log_action(tenant_id, actor.id, "user.role.changed", "user", user_id, updates)
+    if "status" in data:
+        old = u.status; u.status = data["status"]; db.session.commit()
+        updates["status_before"] = old; updates["status_after"] = u.status
+        log_action(tenant_id, actor.id, "user.status.changed", "user", user_id, updates)
+    return jsonify({"ok":True,"updates":updates})
+
+@app.get("/tenants/<tenant_id>/users")
+@require_admin
+def list_users(tenant_id):
+    rows = (db.session.query(User, Membership)
+            .join(Membership, Membership.user_id==User.id)
+            .filter(Membership.tenant_id==tenant_id).all())
+    out = [{"id":u.id,"email":u.email,"name":u.name,"status":u.status,"role":m.role} for u,m in rows]
+    return jsonify(out)
+
+# ---------- Admin Users UI ----------
+ADMIN_USERS_HTML = """
+<!doctype html><html><head><meta charset="utf-8"><title>Admin • Users</title>
+<style>
+body{margin:0;font-family:system-ui,Arial;background:#0E0B0B;color:#EDEAE6}
+header,footer{padding:18px 24px;border-bottom:1px solid #2A221B}
+footer{border-top:1px solid #2A221B;border-bottom:none;color:#8C7A5A;text-align:center}
+h1{color:#D4AF37;margin:0}
+.container{max-width:1100px;margin:0 auto;padding:24px}
+.card{background:#171311;border:1px solid #2A221B;border-radius:14px;padding:18px}
+.btn{padding:8px 12px;border:1px solid #D4AF37;color:#D4AF37;background:transparent;border-radius:10px;text-decoration:none;cursor:pointer}
+.btn:hover{background:#D4AF37;color:#0E0B0B}
+input,select{background:#0E0B0B;color:#EDEAE6;border:1px solid #2A221B;border-radius:8px;padding:8px}
+table{width:100%;border-collapse:collapse;margin-top:14px}
+th,td{border-bottom:1px solid #2A221B;padding:10px;text-align:left}
+.badge{border:1px solid #2A221B;border-radius:999px;padding:4px 10px;font-size:12px}
+.row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+</style></head><body>
+<header><h1>Admin • Users</h1></header>
+<div class="container">
+  <div class="card">
+    <div class="row">
+      <div><strong>Tenant:</strong> <span id="tenantId">demo-tenant</span></div>
+      <div class="row">
+        <input id="inviteEmail" placeholder="email@domain.com">
+        <select id="inviteRole">
+          <option value="staff">staff</option>
+          <option value="analyst">analyst</option>
+          <option value="admin">admin</option>
+        </select>
+        <button class="btn" id="inviteBtn">Send Invite</button>
+        <span id="inviteMsg" class="badge"></span>
+      </div>
+    </div>
+    <table id="usersTable"><thead>
+      <tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Actions</th></tr>
+    </thead><tbody></tbody></table>
+  </div>
+</div>
+<footer>© SmartFlow Systems</footer>
+<script>
+const adminPwd = new URLSearchParams(location.search).get("p") || "";
+const tenantId = document.getElementById("tenantId").textContent;
+async function loadUsers(){
+  const res = await fetch(`/tenants/${tenantId}/users?p=${encodeURIComponent(adminPwd)}`);
+  if(!res.ok){ alert("Auth failed or API error."); return; }
+  const data = await res.json();
+  const tb = document.querySelector("#usersTable tbody");
+  tb.innerHTML = "";
+  data.forEach(u=>{
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${u.name||""}</td>
+      <td>${u.email}</td>
+      <td>
+        <select data-uid="${u.id}" class="roleSel">
+          <option ${u.role==="owner"?"selected":""} value="owner">owner</option>
+          <option ${u.role==="admin"?"selected":""} value="admin">admin</option>
+          <option ${u.role==="staff"?"selected":""} value="staff">staff</option>
+          <option ${u.role==="analyst"?"selected":""} value="analyst">analyst</option>
+        </select>
+      </td>
+      <td><span class="badge">${u.status}</span></td>
+      <td>
+        <button class="btn actBtn" data-uid="${u.id}" data-status="${u.status==='active'?'suspended':'active'}">
+          ${u.status==='active'?'Suspend':'Activate'}
+        </button>
+      </td>`;
+    tb.appendChild(tr);
+  });
+  document.querySelectorAll(".roleSel").forEach(sel=>{
+    sel.addEventListener("change", async (e)=>{
+      const uid = e.target.getAttribute("data-uid");
+      const role = e.target.value;
+      const res = await fetch(`/tenants/${tenantId}/users/${uid}?p=${encodeURIComponent(adminPwd)}`, {
+        method:"PATCH", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ role })
+      });
+      if(!res.ok){ alert("Failed to update role"); return; }
+      loadUsers();
+    });
+  });
+  document.querySelectorAll(".actBtn").forEach(btn=>{
+    btn.addEventListener("click", async (e)=>{
+      const uid = e.target.getAttribute("data-uid");
+      const status = e.target.getAttribute("data-status");
+      const res = await fetch(`/tenants/${tenantId}/users/${uid}?p=${encodeURIComponent(adminPwd)}`, {
+        method:"PATCH", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ status })
+      });
+      if(!res.ok){ alert("Failed to update status"); return; }
+      loadUsers();
+    });
+  });
+}
+document.getElementById("inviteBtn").addEventListener("click", async ()=>{
+  const email = document.getElementById("inviteEmail").value.trim();
+  const role  = document.getElementById("inviteRole").value;
+  if(!email){ alert("Enter email"); return; }
+  const res = await fetch(`/tenants/${tenantId}/invites?p=${encodeURIComponent(adminPwd)}`, {
+    method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ email, role })
+  });
+  const msg = document.getElementById("inviteMsg");
+  if(!res.ok){ msg.textContent = "Failed to invite"; return; }
+  const data = await res.json();
+  msg.textContent = "Invite sent"; console.log("Invite link:", data.invite_link);
+  document.getElementById("inviteEmail").value = "";
+});
+loadUsers();
+</script>
+</body></html>
+"""
+
+@app.get("/admin/users")
+@require_admin
+def admin_users_page():
+    return ADMIN_USERS_HTML
+
+# ---------- Notifications API + Page ----------
+def _admin_override_ok():
+    return (request.args.get("p") == Config.ADMIN_PASSWORD) or (request.headers.get("X-Admin-Password") == Config.ADMIN_PASSWORD)
+
+@app.get("/api/tenants/<tenant_id>/notifications")
+def get_notifications(tenant_id):
+    if not _admin_override_ok():
+        u, t = get_current_user()
+        if t.id != tenant_id: return ("Forbidden", 403)
+    s = get_or_create_notif_settings(tenant_id)
+    return {"tenant_id": tenant_id, "email_enabled": s.email_enabled, "sms_enabled": s.sms_enabled,
+            "reminder_hours_before": s.reminder_hours_before}
+
+@app.put("/api/tenants/<tenant_id>/notifications")
+def update_notifications(tenant_id):
+    if not _admin_override_ok():
+        u, t = get_current_user()
+        if t.id != tenant_id: return ("Forbidden", 403)
+    data = request.get_json() or {}
+    s = get_or_create_notif_settings(tenant_id)
+    if "email_enabled" in data: s.email_enabled = bool(data["email_enabled"])
+    if "sms_enabled" in data: s.sms_enabled = bool(data["sms_enabled"])
+    if "reminder_hours_before" in data:
+        try: s.reminder_hours_before = int(data["reminder_hours_before"])
+        except: pass
+    db.session.commit()
+    log_action(tenant_id, "system", "notifications.updated", "tenant", tenant_id, {
+        "email_enabled": s.email_enabled, "sms_enabled": s.sms_enabled,
+        "reminder_hours_before": s.reminder_hours_before })
+    return {"ok": True}
+
+SETTINGS_HTML = """
+<!doctype html><html><head><meta charset="utf-8"><title>Settings • Notifications</title>
+<style>
+body{margin:0;font-family:system-ui,Arial;background:#0E0B0B;color:#EDEAE6}
+header,footer{padding:18px 24px;border-bottom:1px solid #2A221B}
+footer{border-top:1px solid #2A221B;border-bottom:none;color:#8C7A5A;text-align:center}
+h1{color:#D4AF37;margin:0}
+.container{max-width:900px;margin:0 auto;padding:24px}
+.card{background:#171311;border:1px solid #2A221B;border-radius:14px;padding:18px}
+.row{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+label.switch{position:relative;display:inline-block;width:46px;height:24px}
+label.switch input{opacity:0;width:0;height:0}
+.slider{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#2A221B;border-radius:999px;transition:.2s}
+.slider:before{position:absolute;content:"";height:18px;width:18px;left:3px;top:3px;background:#0E0B0B;border-radius:50%;transition:.2s}
+input:checked + .slider{background:#D4AF37}
+input:checked + .slider:before{transform:translateX(22px)}
+input,select{background:#0E0B0B;color:#EDEAE6;border:1px solid #2A221B;border-radius:8px;padding:8px}
+.btn{padding:10px 14px;border:1px solid #D4AF37;color:#D4AF37;background:transparent;border-radius:10px;text-decoration:none;cursor:pointer}
+.btn:hover{background:#D4AF37;color:#0E0B0B}
+small{color:#8C7A5A}
+</style></head><body>
+<header><h1>Settings • Notifications</h1></header>
+<div class="container">
+  <div class="card">
+    <div class="row" style="justify-content:space-between">
+      <div><strong>Tenant:</strong> <span id="tenantId">demo-tenant</span></div>
+      <div><small>Tip: add ?p=ADMIN_PASSWORD to bypass login during setup</small></div>
+    </div>
+    <hr style="border-color:#2A221B;border-width:0 0 1px;margin:12px 0" />
+    <div class="row">
+      <div style="min-width:220px">Email reminders</div>
+      <label class="switch"><input id="emailToggle" type="checkbox"/><span class="slider"></span></label>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <div style="min-width:220px">SMS reminders</div>
+      <label class="switch"><input id="smsToggle" type="checkbox"/><span class="slider"></span></label>
+      <small>(requires Vonage API keys)</small>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <div style="min-width:220px">Reminder timing</div>
+      <select id="timing">
+        <option value="12">12 hours before</option>
+        <option value="24" selected>24 hours before</option>
+        <option value="48">48 hours before</option>
+      </select>
+    </div>
+    <div class="row" style="margin-top:16px">
+      <button class="btn" id="saveBtn">Save</button>
+      <span id="msg" style="margin-left:8px"></span>
+    </div>
+  </div>
+</div>
+<footer>© SmartFlow Systems</footer>
+<script>
+const tenantId = document.getElementById("tenantId").textContent;
+const adminPwd = new URLSearchParams(location.search).get("p") || "";
+async function loadSettings(){
+  const res = await fetch(`/api/tenants/${tenantId}/notifications?p=${encodeURIComponent(adminPwd)}`);
+  if(!res.ok){ alert("Auth failed or API error."); return; }
+  const s = await res.json();
+  document.getElementById("emailToggle").checked = !!s.email_enabled;
+  document.getElementById("smsToggle").checked = !!s.sms_enabled;
+  document.getElementById("timing").value = String(s.reminder_hours_before || 24);
+}
+async function saveSettings(){
+  const body = {
+    email_enabled: document.getElementById("emailToggle").checked,
+    sms_enabled: document.getElementById("smsToggle").checked,
+    reminder_hours_before: parseInt(document.getElementById("timing").value)
+  };
+  const res = await fetch(`/api/tenants/${tenantId}/notifications?p=${encodeURIComponent(adminPwd)}`, {
+    method:"PUT", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(body)
+  });
+  document.getElementById("msg").textContent = res.ok ? "Saved ✓" : "Save failed";
+  if(res.ok) setTimeout(()=>document.getElementById("msg").textContent="", 1500);
+}
+document.getElementById("saveBtn").addEventListener("click", saveSettings);
+loadSettings();
+</script>
+</body></html>
+"""
+
+@app.get("/settings/notifications")
+def notifications_page():
+    return SETTINGS_HTML
+
+# ---------- Bookings API ----------
+@app.post("/api/tenants/<tenant_id>/bookings")
+def create_booking(tenant_id):
+    data = request.get_json() or {}
+    name = data.get("customer_name","Walk-in")
+    email = data.get("customer_email")
+    phone = data.get("customer_phone")
+    start_at_iso = data.get("start_at")
+    if not start_at_iso: return ("start_at (ISO) required", 400)
+    try:
+        start_at = datetime.fromisoformat(start_at_iso.replace("Z","+00:00")).replace(tzinfo=None)
+    except Exception:
+        return ("Invalid start_at format", 400)
+    b = Booking(id=str(uuid.uuid4())[:12], tenant_id=tenant_id, customer_name=name,
+                customer_email=email, customer_phone=phone, start_at=start_at, status="confirmed")
+    db.session.add(b); db.session.commit()
+    return {"ok": True, "booking_id": b.id}
+
+@app.get("/api/tenants/<tenant_id>/bookings")
+def list_bookings(tenant_id):
+    now = datetime.utcnow()
+    rows = (Booking.query
+            .filter(Booking.tenant_id==tenant_id, Booking.start_at >= now, Booking.status=="confirmed")
+            .order_by(Booking.start_at.asc()).limit(50).all())
+    out = [{"id": b.id, "customer_name": b.customer_name, "email": b.customer_email,
+            "phone": b.customer_phone, "start_at": b.start_at.isoformat()+"Z", "status": b.status} for b in rows]
+    return out
+
+# ---------- Scheduler: reminder worker ----------
+def _send_booking_reminders():
+    try:
+        now = datetime.utcnow()
+        tenant_ids = [t.id for t in Tenant.query.all()]
+        for tid in tenant_ids:
+            s = get_or_create_notif_settings(tid)
+            hours = int(s.reminder_hours_before or 24)
+            win_start = now + timedelta(hours=hours)
+            win_end   = win_start + timedelta(minutes=5)
+            candidates = (Booking.query
+                          .filter(Booking.tenant_id==tid, Booking.status=="confirmed",
+                                  Booking.start_at >= win_start, Booking.start_at < win_end).all())
+            for b in candidates:
+                # Email
+                if notif_ok(tid, "email") and b.customer_email:
+                    already = ReminderLog.query.filter_by(booking_id=b.id, channel="email", kind="before").first()
+                    if not already:
+                        try:
+                            send_email_smtp(b.customer_email, "Appointment reminder",
+                                            f"Reminder: {b.customer_name}, you have an appointment at {b.start_at}.")
+                            db.session.add(ReminderLog(tenant_id=tid, booking_id=b.id, channel="email", kind="before"))
+                            db.session.commit()
+                        except Exception as e:
+                            print("[reminder/email] error:", e)
+                # SMS
+                if notif_ok(tid, "sms") and b.customer_phone:
+                    already = ReminderLog.query.filter_by(booking_id=b.id, channel="sms", kind="before").first()
+                    if not already:
+                        if send_sms(b.customer_phone, f"Reminder: your appointment is at {b.start_at}."):
+                            db.session.add(ReminderLog(tenant_id=tid, booking_id=b.id, channel="sms", kind="before"))
+                            db.session.commit()
+    except Exception as e:
+        print("[scheduler] loop error:", e)
+
+scheduler = BackgroundScheduler(daemon=True)
+scheduler.add_job(_send_booking_reminders, "interval", minutes=5, id="reminders_every_5m", replace_existing=True)
+try: scheduler.start()
+except Exception as e: print("[scheduler] start error:", e)
+
+# ---------- Test Booking UI ----------
+TEST_BOOKING_HTML = """
+<!doctype html><html><head><meta charset="utf-8"><title>Create Test Booking</title>
+<style>
+body{margin:0;font-family:system-ui,Arial;background:#0E0B0B;color:#EDEAE6}
+header,footer{padding:18px 24px;border-bottom:1px solid #2A221B}
+footer{border-top:1px solid #2A221B;border-bottom:none;color:#8C7A5A;text-align:center}
+h1{color:#D4AF37;margin:0}
+.container{max-width:720px;margin:0 auto;padding:24px}
+.card{background:#171311;border:1px solid #2A221B;border-radius:14px;padding:18px}
+label{display:block;margin:10px 0 6px}
+input,select{width:100%;background:#0E0B0B;color:#EDEAE6;border:1px solid #2A221B;border-radius:8px;padding:10px}
+.btn{margin-top:14px;padding:10px 14px;border:1px solid #D4AF37;color:#D4AF37;background:transparent;border-radius:10px;text-decoration:none;cursor:pointer}
+.btn:hover{background:#D4AF37;color:#0E0B0B}
+.notice{margin-top:10px;color:#D4AF37}
+</style></head><body>
+<header><h1>Create Test Booking</h1></header>
+<div class="container">
+  <div class="card">
+    <p style="margin-top:0">Creates a booking for <strong>demo-tenant</strong> to test reminders.</p>
+    <label>Customer name</label><input id="name" placeholder="Jane Doe">
+    <label>Customer email</label><input id="email" type="email" placeholder="you@example.com">
+    <label>Customer phone (E.164 e.g., +447700900123)</label><input id="phone" placeholder="+44...">
+    <label>Start time (UTC)</label><input id="dt" type="datetime-local">
+    <div class="notice">Tip: set to your reminder window (e.g., now + 24h).</div>
+    <button class="btn" id="createBtn">Create Booking</button>
+    <pre id="out" style="white-space:pre-wrap;margin-top:12px"></pre>
+  </div>
+</div>
+<footer>© SmartFlow Systems</footer>
+<script>
+function pad(n){return n<10?'0'+n:n}
+function defaultDateTimeLocal(){
+  const d = new Date(Date.now() + 24*3600*1000);
+  d.setMinutes(Math.ceil(d.getMinutes()/5)*5,0,0);
+  const yyyy=d.getUTCFullYear(),mm=pad(d.getUTCMonth()+1),dd=pad(d.getUTCDate()),
+        hh=pad(d.getUTCHours()),mi=pad(d.getUTCMinutes());
+  return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
+}
+document.getElementById("dt").value = defaultDateTimeLocal();
+document.getElementById("createBtn").addEventListener("click", async ()=>{
+  const name  = document.getElementById("name").value || "Test User";
+  const email = document.getElementById("email").value || "";
+  const phone = document.getElementById("phone").value || "";
+  const dt    = document.getElementById("dt").value;
+  if(!dt){ alert("Choose a start time"); return; }
+  const startISO = dt + ":00Z";
+  const res = await fetch("/api/tenants/demo-tenant/bookings", {
+    method:"POST", headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify({ customer_name:name, customer_email:email, customer_phone:phone, start_at:startISO })
+  });
+  const out = document.getElementById("out");
+  out.textContent = res.ok ? JSON.stringify(await res.json(), null, 2) : ("Error: " + await res.text());
+});
+</script>
+</body></html>
+"""
+
+@app.get("/test/booking")
+def test_booking_page():
+    return TEST_BOOKING_HTML
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 3000)))
+
+========================================
+9) Replit Secrets — create keys (values can be blank now)
+========================================
+FLASK_SECRET_KEY
+DEBUG="True"
+ADMIN_PASSWORD=change-this
+
+# Stripe (Test Mode)
+STRIPE_SECRET_KEY
+STRIPE_PUBLISHABLE_KEY
+STRIPE_WEBHOOK_SECRET
+STRIPE_PRICE_STARTER_MONTHLY
+STRIPE_PRICE_FLOWKIT_MONTHLY
+STRIPE_PRICE_LAUNCHPACK_MONTHLY
+STRIPE_PRICE_STARTER_ONEOFF
+STRIPE_PRICE_FLOWKIT_ONEOFF
+STRIPE_PRICE_LAUNCHPACK_ONEOFF
+
+# Email (SMTP)
+SMTP_HOST
+SMTP_PORT=587
+SMTP_USER
+SMTP_PASS
+SMTP_FROM=no-reply@smartflowsystems.com
+
+# Vonage (SMS)
+VONAGE_API_KEY
+VONAGE_API_SECRET
+VONAGE_NUMBER
+
+========================================
+10) GitHub
+========================================
+- Open Git tab → Connect to GitHub (private repo “smartflow-app”)
+- Commit: "SmartFlow: base app + pricing + webhook + admin + Vonage SMS + notifications + bookings + scheduler + logo"
+
+========================================
+11) Output (print after run)
+========================================
+- Print the live URL and these test links:
+  /pricing
+  /admin/users?p=YOUR_ADMIN_PASSWORD
+  /settings/notifications?p=YOUR_ADMIN_PASSWORD
+  /test/booking
+
+========================================
+12) IMPORTANT: Replace placeholder logo
+========================================
+- Upload your real logo (PNG you’ve chosen) to Replit → file path: static/logo.png
+- Refresh / and /pricing to see it live (gold wordmark with flowing mark).
+DONE.

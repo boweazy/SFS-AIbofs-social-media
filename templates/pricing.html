@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+
+{% block title %}SmartFlow Systems - Pricing{% endblock %}
+
+{% block content %}
+<div class="container" style="padding: 4rem 2rem;">
+    <h2 style="color: #ffd700; font-size: 3rem; margin-bottom: 3rem; text-align: center;">
+        Choose Your Plan
+    </h2>
+    
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2rem; max-width: 1000px; margin: 0 auto;">
+        
+        <!-- Starter Plan -->
+        <div style="background: rgba(255, 215, 0, 0.1); border: 2px solid #ffd700; border-radius: 12px; padding: 2rem; text-align: center;">
+            <h3 style="color: #ffd700; font-size: 1.8rem; margin-bottom: 1rem;">Starter</h3>
+            <p style="font-size: 2.5rem; font-weight: bold; margin-bottom: 1rem;">£29<span style="font-size: 1rem;">/month</span></p>
+            <ul style="list-style: none; padding: 0; margin-bottom: 2rem;">
+                <li style="margin: 0.8rem 0;">✓ Basic Booking System</li>
+                <li style="margin: 0.8rem 0;">✓ Email Notifications</li>
+                <li style="margin: 0.8rem 0;">✓ 2 Team Members</li>
+                <li style="margin: 0.8rem 0;">✓ Basic Templates</li>
+            </ul>
+            <button style="background: #ffd700; color: #000; border: none; padding: 1rem 2rem; border-radius: 6px; font-weight: bold; cursor: pointer; width: 100%;">
+                Get Started
+            </button>
+        </div>
+        
+        <!-- FlowKit Plan -->
+        <div style="background: rgba(255, 215, 0, 0.2); border: 3px solid #ffd700; border-radius: 12px; padding: 2rem; text-align: center; transform: scale(1.05);">
+            <div style="background: #ffd700; color: #000; padding: 0.5rem; border-radius: 20px; font-weight: bold; margin-bottom: 1rem;">MOST POPULAR</div>
+            <h3 style="color: #ffd700; font-size: 1.8rem; margin-bottom: 1rem;">FlowKit</h3>
+            <p style="font-size: 2.5rem; font-weight: bold; margin-bottom: 1rem;">£79<span style="font-size: 1rem;">/month</span></p>
+            <ul style="list-style: none; padding: 0; margin-bottom: 2rem;">
+                <li style="margin: 0.8rem 0;">✓ Advanced AI Scheduler</li>
+                <li style="margin: 0.8rem 0;">✓ SMS & Email Notifications</li>
+                <li style="margin: 0.8rem 0;">✓ 5 Team Members</li>
+                <li style="margin: 0.8rem 0;">✓ Customer Portal</li>
+                <li style="margin: 0.8rem 0;">✓ Analytics & Reports</li>
+            </ul>
+            <button style="background: #ffd700; color: #000; border: none; padding: 1rem 2rem; border-radius: 6px; font-weight: bold; cursor: pointer; width: 100%;">
+                Get Started
+            </button>
+        </div>
+        
+        <!-- LaunchPack Plan -->
+        <div style="background: rgba(255, 215, 0, 0.1); border: 2px solid #ffd700; border-radius: 12px; padding: 2rem; text-align: center;">
+            <h3 style="color: #ffd700; font-size: 1.8rem; margin-bottom: 1rem;">LaunchPack</h3>
+            <p style="font-size: 2.5rem; font-weight: bold; margin-bottom: 1rem;">£199<span style="font-size: 1rem;">/month</span></p>
+            <ul style="list-style: none; padding: 0; margin-bottom: 2rem;">
+                <li style="margin: 0.8rem 0;">✓ Everything in FlowKit</li>
+                <li style="margin: 0.8rem 0;">✓ AI Concierge</li>
+                <li style="margin: 0.8rem 0;">✓ 15 Team Members</li>
+                <li style="margin: 0.8rem 0;">✓ Advanced Analytics</li>
+                <li style="margin: 0.8rem 0;">✓ Priority Support</li>
+                <li style="margin: 0.8rem 0;">✓ Custom Automations</li>
+            </ul>
+            <button style="background: #ffd700; color: #000; border: none; padding: 1rem 2rem; border-radius: 6px; font-weight: bold; cursor: pointer; width: 100%;">
+                Get Started
+            </button>
+        </div>
+        
+    </div>
+    
+    <div style="text-align: center; margin-top: 3rem; padding: 2rem; background: rgba(0, 0, 0, 0.3); border-radius: 8px;">
+        <h3 style="color: #ffd700; margin-bottom: 1rem;">Need Something Custom?</h3>
+        <p style="margin-bottom: 1.5rem;">Contact our team for enterprise solutions tailored to your specific needs.</p>
+        <button style="background: transparent; color: #ffd700; border: 2px solid #ffd700; padding: 1rem 2rem; border-radius: 6px; font-weight: bold; cursor: pointer;">
+            Contact Sales
+        </button>
+    </div>
+</div>
+{% endblock %}
