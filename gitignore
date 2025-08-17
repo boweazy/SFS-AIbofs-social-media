@@ -1,16 +1,10 @@
-# Replit / Python project ignores
-
-# Replit config files
+# Replit & Python ignores
 .replit
 replit.nix
-
-# Virtual environments
 venv/
-env/
 .venv/
+env/
 __pycache__/
-
-# Python cache & build
 *.pyc
 *.pyo
 *.pyd
@@ -31,5 +25,5 @@ secrets.json
 .DS_Store
 Thumbs.db
 
-# Node (if using frontend)
+# Node (if you add a frontend later)
 node_modules/
