@@ -1,8 +1,10 @@
-import os, json, uuid, base64
+import os, json, uuid, base64, random
 from datetime import datetime, timedelta
 from functools import wraps
-from flask import Flask, request, jsonify, render_template_string, redirect, send_from_directory
+from typing import List
+from flask import Flask, request, jsonify, render_template_string, redirect, send_from_directory, render_template
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
+from pydantic import BaseModel, Field
 from apscheduler.schedulers.background import BackgroundScheduler
 import stripe
 
@@ -367,6 +369,97 @@ def serve_index():
 @app.route("/assets/<path:filename>")
 def serve_assets(filename):
     return send_from_directory("assets", filename)
+
+# ========== API Tester Integration ==========
+# Models for API
+class GenerateRequest(BaseModel):
+    topic: str = Field(..., description="Post topic")
+    tone: str = Field("friendly", description="helpful|concise|friendly|bold")
+    platform: str = Field("X", description="X|LinkedIn")
+    count: int = Field(3, ge=1, le=10)
+    niche: str = Field("local services")
+
+class PostOut(BaseModel):
+    text: str
+    alt_text: str
+    suggested_image: str
+    hashtags: List[str]
+
+# Content generation helpers
+HOOKS = [
+  "Stop guessing. Start scaling.",
+  "Your customers are online—are you?",
+  "Automation that pays for itself.",
+  "Turn followers into bookings.",
+  "Make your operations feel effortless."
+]
+
+CTAS = [
+  "Book a free 10-min demo.",
+  "DM 'FLOW' to get started.",
+  "Grab your spot for a quick walkthrough.",
+  "Try the live demo—no card needed."
+]
+
+IMG_SUGGESTIONS = [
+  "Dark UI mockup with gold accents",
+  "Before/after metrics dashboard",
+  "Booking calendar close-up",
+  "AI chat widget on a website",
+  "Hands on keyboard, gold lighting"
+]
+
+def platform_limit(platform:str)->int:
+    return 280 if platform.upper()=="X" else 3000
+
+def pick_hashtags(niche:str, platform:str)->List[str]:
+    base = [
+      f"#{niche.replace(' ','')}",
+      "#SmartFlowSystems",
+      "#Automation",
+      "#SmallBusiness",
+      "#Growth",
+      "#AIforBusiness"
+    ]
+    random.shuffle(base)
+    k = random.choice([3,4,5,6])
+    return base[:k]
+
+def make_post(topic:str, tone:str, platform:str, niche:str)->PostOut:
+    hook = random.choice(HOOKS)
+    benefit = "Save hours weekly and convert more leads"
+    proof = "Used by UK SMBs across services, fitness, trades, and local retail"
+    cta = random.choice(CTAS)
+
+    body = f"{hook}\n{topic}—{benefit}. Proof: {proof}. {cta}"
+    limit = platform_limit(platform)
+    text = (body[:limit-1] + "…") if len(body) > limit else body
+
+    return PostOut(
+      text=text,
+      alt_text=f"{platform} post: {topic} in {niche}, tone {tone}.",
+      suggested_image=random.choice(IMG_SUGGESTIONS),
+      hashtags=pick_hashtags(niche, platform)
+    )
+
+# API endpoint for post generation
+@app.post("/api/generate_posts")
+def generate_posts():
+    try:
+      data = request.get_json(force=True) or {}
+      req = GenerateRequest(**data)
+    except Exception as e:
+      return jsonify({"error": str(e)}), 400
+
+    posts = [make_post(req.topic, req.tone, req.platform, req.niche).model_dump() for _ in range(req.count)]
+    return jsonify({"platform": req.platform, "count": req.count, "posts": posts})
+
+# Browser tester page
+@app.get("/tester")
+def tester():
+    APP_NAME = "SmartFlow Systems"
+    THEME = {"bg":"#0b0b0b","gold":"#d4af37","text":"#f2f2f2"}
+    return render_template("tester.html", app_name=APP_NAME, theme=THEME)
 
 # ---------- Plan gating ----------
 @app.get("/feature/<name>")

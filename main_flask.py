@@ -1,251 +1,150 @@
 from __future__ import annotations
+import os, random, datetime
+from typing import List
+from flask import Flask, request, jsonify, render_template, send_from_directory
+from pydantic import BaseModel, Field
 
-import asyncio
-import json
-import re
-from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone, timedelta
-from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional
+APP_NAME = "SmartFlow Systems"
+THEME = {"bg":"#0b0b0b","gold":"#d4af37","text":"#f2f2f2"}
 
-from flask import Flask, request, jsonify, send_from_directory
-import threading
+app = Flask(__name__, static_folder="static", template_folder="templates")
 
-DATA_FILE = Path("data.json")
+# ------- Models for API -------
+class GenerateRequest(BaseModel):
+    topic: str = Field(..., description="Post topic")
+    tone: str = Field("friendly", description="helpful|concise|friendly|bold")
+    platform: str = Field("X", description="X|LinkedIn")
+    count: int = Field(3, ge=1, le=10)
+    niche: str = Field("local services")
 
-@dataclass
-class PostRecord:
-    id: int
-    platform: str
-    content: str
-    status: Literal["draft", "scheduled", "published", "failed"] = "scheduled"
-    scheduled_time: Optional[str] = None  # ISO UTC
-    external_id: Optional[str] = None
-    error: Optional[str] = None
-    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    updated_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+class PostOut(BaseModel):
+    text: str
+    alt_text: str
+    suggested_image: str
+    hashtags: List[str]
 
-@dataclass
-class State:
-    next_post_id: int = 1
-    posts: List[PostRecord] = field(default_factory=list)
-    accounts: Dict[str, Dict[str, Optional[str]]] = field(default_factory=dict)
+# ------- Helpers for rule-based copy -------
+HOOKS = [
+  "Stop guessing. Start scaling.",
+  "Your customers are online—are you?",
+  "Automation that pays for itself.",
+  "Turn followers into bookings.",
+  "Make your operations feel effortless."
+]
 
-class Store:
-    """Single-file JSON store (keeps setup easy)."""
-    def __init__(self, file: Path):
-        self.file = file
-        self.lock = threading.Lock()
-        if not file.exists():
-            self._write(State())
+CTAS = [
+  "Book a free 10-min demo.",
+  "DM 'FLOW' to get started.",
+  "Grab your spot for a quick walkthrough.",
+  "Try the live demo—no card needed."
+]
 
-    def _read(self) -> State:
-        raw = json.loads(self.file.read_text() or "{}")
-        if not raw:
-            return State()
-        posts = [PostRecord(**p) for p in raw.get("posts", [])]
-        return State(
-            next_post_id=raw.get("next_post_id", 1),
-            posts=posts,
-            accounts=raw.get("accounts", {}),
-        )
+IMG_SUGGESTIONS = [
+  "Dark UI mockup with gold accents",
+  "Before/after metrics dashboard",
+  "Booking calendar close-up",
+  "AI chat widget on a website",
+  "Hands on keyboard, gold lighting"
+]
 
-    def _write(self, state: State) -> None:
-        payload = {
-            "next_post_id": state.next_post_id,
-            "posts": [asdict(p) for p in state.posts],
-            "accounts": state.accounts,
-        }
-        self.file.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
+def platform_limit(platform:str)->int:
+    return 280 if platform.upper()=="X" else 3000
 
-    def add_post(self, rec: PostRecord) -> PostRecord:
-        with self.lock:
-            state = self._read()
-            rec.id = state.next_post_id
-            state.next_post_id += 1
-            state.posts.append(rec)
-            self._write(state)
-            return rec
+def pick_hashtags(niche:str, platform:str)->List[str]:
+    base = [
+      f"#{niche.replace(' ','')}",
+      "#SmartFlowSystems",
+      "#Automation",
+      "#SmallBusiness",
+      "#Growth",
+      "#AIforBusiness"
+    ]
+    random.shuffle(base)
+    k = random.choice([3,4,5,6])
+    return base[:k]
 
-    def update_post(self, rec: PostRecord) -> None:
-        with self.lock:
-            state = self._read()
-            for i, p in enumerate(state.posts):
-                if p.id == rec.id:
-                    state.posts[i] = rec
-                    break
-            self._write(state)
+def make_post(topic:str, tone:str, platform:str, niche:str)->PostOut:
+    hook = random.choice(HOOKS)
+    benefit = "Save hours weekly and convert more leads"
+    proof = "Used by UK SMBs across services, fitness, trades, and local retail"
+    cta = random.choice(CTAS)
 
-    def list_posts(self, status: Optional[str] = None) -> List[PostRecord]:
-        with self.lock:
-            state = self._read()
-            rows = state.posts
-            if status:
-                rows = [p for p in rows if p.status == status]
-            return sorted(rows, key=lambda r: r.created_at, reverse=True)
+    body = f"{hook}\n{topic}—{benefit}. Proof: {proof}. {cta}"
+    limit = platform_limit(platform)
+    text = (body[:limit-1] + "…") if len(body) > limit else body
 
-    def save_account(self, platform: str, access_token: str, refresh_token: Optional[str]) -> None:
-        with self.lock:
-            state = self._read()
-            state.accounts[platform] = {
-                "access_token": access_token,
-                "refresh_token": refresh_token,
-            }
-            self._write(state)
-
-    def get_access_token(self, platform: str) -> Optional[str]:
-        with self.lock:
-            state = self._read()
-            acc = state.accounts.get(platform)
-            return acc.get("access_token") if acc else None
-
-store = Store(DATA_FILE)
-
-# Content generation functions
-def _hashtag_suggest(text: str, limit: int = 5) -> List[str]:
-    words = re.findall(r"[A-Za-z][A-Za-z0-9']{3,}", text.lower())
-    stop = {"this", "that", "with", "from", "your", "about", "into", "have"}
-    freq: Dict[str, int] = {}
-    for w in words:
-        if w in stop:
-            continue
-        freq[w] = freq.get(w, 0) + 1
-    ranked = sorted(freq.items(), key=lambda kv: (-kv[1], kv[0]))
-    return [f"#{w}" for w, _ in ranked[:limit]]
-
-def _score(text: str) -> float:
-    length = len(text)
-    score = 0.5
-    if 120 <= length <= 240:
-        score += 0.3
-    if re.search(r"\b(let's|try|do|build|learn|start|join|grab)\b", text.lower()):
-        score += 0.15
-    if re.search(r"[🚀✨🔥✅🎯💡]", text):
-        score += 0.05
-    return round(min(score, 1.0), 2)
-
-def generate_variants(topic: str, tone: str, count: int) -> List[Dict[str, Any]]:
-    out: List[Dict[str, Any]] = []
-    for i in range(count):
-        content = (
-            f"{topic.strip()} — {tone} take #{i+1}. "
-            f"Action: reply with your biggest blocker."
-        )
-        out.append({
-            "content": content,
-            "hashtags": _hashtag_suggest(content),
-            "score": _score(content),
-            "rationale": "length_tune|imperative|emoji_opt"
-        })
-    return out
-
-def publish_stub(platform: str, content: str, token: Optional[str]) -> tuple[bool, Optional[str], Optional[str]]:
-    if not token:
-        return False, None, "missing_access_token"
-    ext_id = f"{platform}_{abs(hash(content)) % 10_000_000}"
-    return True, ext_id, None
-
-# Flask app
-app = Flask(__name__)
-
-@app.route('/healthz')
-def healthz():
-    return {"ok": True, "brand": "Smart Flow Systems"}
-
-@app.route('/auth/manual', methods=['POST'])
-def manual_auth():
-    data = request.get_json()
-    platform = data.get('platform')
-    access_token = data.get('access_token')
-    refresh_token = data.get('refresh_token')
-    
-    store.save_account(platform, access_token, refresh_token)
-    return {"ok": True, "platform": platform}
-
-@app.route('/generate', methods=['POST'])
-def generate():
-    data = request.get_json()
-    topic = data.get('topic', '')
-    tone = data.get('tone', 'helpful')
-    count = data.get('count', 3)
-    
-    if not topic or len(topic) < 2:
-        return {"detail": "Topic must be at least 2 characters"}, 400
-    
-    drafts = generate_variants(topic, tone, count)
-    return jsonify(drafts)
-
-@app.route('/posts', methods=['POST'])
-def create_or_schedule():
-    data = request.get_json()
-    platform = data.get('platform')
-    content = data.get('content', '').strip()
-    scheduled_time = data.get('scheduled_time')
-    
-    if not content:
-        return {"detail": "Content cannot be empty"}, 400
-    
-    if scheduled_time:
-        when = datetime.fromisoformat(scheduled_time.replace('Z', '+00:00'))
-    else:
-        when = datetime.now(timezone.utc) + timedelta(seconds=10)
-    
-    if when.tzinfo is None:
-        when = when.replace(tzinfo=timezone.utc)
-    
-    if when < datetime.now(timezone.utc):
-        return {"detail": "scheduled_time must be in the future"}, 400
-
-    rec = PostRecord(
-        id=0,
-        platform=platform,
-        content=content,
-        status="scheduled",
-        scheduled_time=when.isoformat(),
+    return PostOut(
+      text=text,
+      alt_text=f"{platform} post: {topic} in {niche}, tone {tone}.",
+      suggested_image=random.choice(IMG_SUGGESTIONS),
+      hashtags=pick_hashtags(niche, platform)
     )
-    saved = store.add_post(rec)
-    return jsonify(asdict(saved))
 
-@app.route('/posts', methods=['GET'])
-def list_posts():
-    status = request.args.get('status')
-    rows = store.list_posts(status=status)
-    return jsonify([asdict(r) for r in rows])
+# ------- Routes -------
+@app.get("/")
+def home():
+    return render_template("index.html", app_name=APP_NAME, theme=THEME)
 
-@app.route('/static/<path:filename>')
+@app.get("/pricing")
+def pricing():
+    plans = [
+      {"name":"Starter","price":"£19/mo","bullets":["30 posts/mo","1 platform","Templates + Schedule"]},
+      {"name":"Pro","price":"£49/mo","bullets":["90 posts/mo","2 platforms","Smart Replies, Best-Time, Export"]},
+      {"name":"Premium","price":"£99/mo","bullets":["Unlimited drafts","Bulk Schedule + Experiments","Team seats (2)"]}
+    ]
+    return render_template("pricing.html", plans=plans, app_name=APP_NAME, theme=THEME)
+
+@app.get("/portfolio")
+def portfolio():
+    samples = [
+      {"title":"AI Social Bot","desc":"Generate + schedule with analytics","link":"#"},
+      {"title":"Booking System","desc":"Stripe + Calendar + SMS reminders","link":"#"},
+      {"title":"E-commerce Setup","desc":"Theme, payments, fulfilment","link":"#"},
+      {"title":"Chat Agents","desc":"Lead capture & support automation","link":"#"}
+    ]
+    return render_template("portfolio.html", samples=samples, app_name=APP_NAME, theme=THEME)
+
+@app.get("/health")
+def health():
+    return {"status":"ok","ts":datetime.datetime.utcnow().isoformat()}
+
+@app.get("/_setup")
+def setup_page():
+    env = {
+      "STRIPE_KEY": bool(os.getenv("STRIPE_KEY")),
+      "OPENAI_API_KEY": bool(os.getenv("OPENAI_API_KEY")),
+      "SMTP_USER": bool(os.getenv("SMTP_USER")),
+    }
+    missing = [k for k,v in env.items() if not v]
+    steps = [
+      "Optional: add STRIPE_KEY, OPENAI_API_KEY, SMTP_USER in the Replit Secrets for full stack features.",
+      "Run the demo now without keys. API is rule-based.",
+      "Click Pricing to preview plans. Use Portfolio to showcase builds.",
+    ]
+    return render_template("setup.html", env=env, missing=missing, steps=steps, app_name=APP_NAME, theme=THEME)
+
+@app.post("/api/generate_posts")
+def generate_posts():
+    try:
+      data = request.get_json(force=True) or {}
+      req = GenerateRequest(**data)
+    except Exception as e:
+      return jsonify({"error": str(e)}), 400
+
+    posts = [make_post(req.topic, req.tone, req.platform, req.niche).model_dump() for _ in range(req.count)]
+    return jsonify({"platform": req.platform, "count": req.count, "posts": posts})
+
+# NEW: simple browser tester page
+@app.get("/tester")
+def tester():
+    return render_template("tester.html", app_name=APP_NAME, theme=THEME)
+
+# Static
+@app.get("/static/<path:filename>")
 def static_files(filename):
-    return send_from_directory('static', filename)
+    return send_from_directory("static", filename)
 
-@app.route('/')
-def index():
-    return send_from_directory('static', 'index.html')
-
-# Background scheduler
-def scheduler_loop():
-    while True:
-        try:
-            publish_due()
-        except Exception as e:
-            print("scheduler error:", e)
-        threading.Event().wait(5)
-
-def publish_due():
-    now = datetime.now(timezone.utc)
-    rows = store.list_posts(status="scheduled")
-    for rec in rows:
-        due = datetime.fromisoformat(rec.scheduled_time) if rec.scheduled_time else now
-        if due <= now:
-            token = store.get_access_token(rec.platform)
-            ok, ext_id, err = publish_stub(rec.platform, rec.content, token)
-            rec.status = "published" if ok else "failed"
-            rec.external_id = ext_id
-            rec.error = err
-            rec.updated_at = datetime.now(timezone.utc).isoformat()
-            store.update_post(rec)
-
-# Start background scheduler
-scheduler_thread = threading.Thread(target=scheduler_loop, daemon=True)
-scheduler_thread.start()
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+if __name__ == "__main__":
+    port = int(os.getenv("PORT", "3000"))
+    print("Quick links: /health  /_setup  /pricing  /portfolio  /tester")
+    app.run(host="0.0.0.0", port=port)

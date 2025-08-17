@@ -1,80 +1,33 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}SmartFlow Systems{% endblock %}</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            font-family: 'Arial', sans-serif;
-            background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
-            color: #fff;
-            min-height: 100vh;
-        }
-        
-        .header {
-            background: rgba(0, 0, 0, 0.9);
-            border-bottom: 2px solid #ffd700;
-            padding: 1rem 0;
-            text-align: center;
-        }
-        
-        .logo {
-            height: 64px;
-            margin: 0 auto 8px;
-            display: block;
-        }
-        
-        .header h1 {
-            color: #ffd700;
-            font-size: 2rem;
-            font-weight: 300;
-        }
-        
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 0 2rem;
-        }
-        
-        .nav {
-            margin-top: 1rem;
-        }
-        
-        .nav a {
-            color: #fff;
-            text-decoration: none;
-            margin: 0 1rem;
-            padding: 0.5rem 1rem;
-            border-radius: 4px;
-            transition: background-color 0.3s;
-        }
-        
-        .nav a:hover {
-            background-color: rgba(255, 215, 0, 0.1);
-        }
-    </style>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>{{ app_name }}</title>
+  <meta name="theme-color" content="{{ theme.bg }}"/>
+  <link rel="icon" href="/static/favicon.png"/>
+  <link rel="stylesheet" href="/static/style.css"/>
 </head>
 <body>
-    <header class="header">
-        <div class="container">
-            <img class="logo" src="/static/logo.png" alt="SmartFlow Systems" style="height:64px;margin:0 auto 8px;display:block">
-            <h1>SmartFlow Systems</h1>
-            <nav class="nav">
-                <a href="/">Home</a>
-                <a href="/pricing">Pricing</a>
-            </nav>
-        </div>
-    </header>
-
-    <main>
-        {% block content %}{% endblock %}
-    </main>
+  <header class="site-header">
+    <div class="logo-wrap">
+      <img src="/static/logo.svg" alt="SmartFlow Systems logo" class="logo"/>
+      <span class="brand">SmartFlow Systems</span>
+    </div>
+    <nav class="nav">
+      <a href="/">Home</a>
+      <a href="/pricing">Pricing</a>
+      <a href="/portfolio">Portfolio</a>
+      <a href="/tester">Generator</a>
+      <a href="/_setup">Setup</a>
+      <a href="https://replit.com/@Smart-F-Syst/SFS-AIbofs-social-media" class="cta">Live Demo</a>
+    </nav>
+  </header>
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+  <footer class="site-footer">
+    <span>© SmartFlow Systems — Black & Gold. Smooth. Street-Smart. Futuristic.</span>
+  </footer>
 </body>
 </html>

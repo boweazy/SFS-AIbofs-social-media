@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Portfolio</h1>
+<p>Showcase of our business automation solutions.</p>
+
+<div class="cards">
+  {% for sample in samples %}
+  <div class="card">
+    <h3>{{ sample.title }}</h3>
+    <p>{{ sample.desc }}</p>
+    <a href="{{ sample.link }}" class="btn btn-outline">View Details</a>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}
