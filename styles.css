@@ -1,0 +1,111 @@
+:root{
+  --bg:#0b0b0b; --panel:#111213; --muted:#9a9a9a; --gold:#d4af37; --gold-2:#f5d67b;
+  --txt:#f2f2f2; --ok:#3ad29f; --shadow:0 10px 30px rgba(0,0,0,.35);
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--txt);font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif;scroll-behavior:smooth}
+a{color:inherit;text-decoration:none}
+img{display:block;max-width:100%}
+h1,h2,h3{letter-spacing:.2px}
+
+.nav{
+  position:sticky;top:0;z-index:60;display:flex;align-items:center;justify-content:space-between;
+  padding:14px 20px;background:rgba(11,11,11,.7);backdrop-filter:saturate(1.1) blur(8px);border-bottom:1px solid #1a1a1a
+}
+.brand{display:flex;align-items:center;gap:10px;font-weight:800}
+.links{display:flex;gap:16px;align-items:center}
+.links a{opacity:.9}
+.links .btn.small{padding:8px 12px}
+
+.btn{
+  display:inline-block;border:1px solid #2a2a2a;padding:12px 18px;border-radius:12px;transition:transform .18s ease, box-shadow .18s ease;box-shadow:var(--shadow)
+}
+.btn:hover{transform:translateY(-1px)}
+.btn.primary{background:linear-gradient(135deg,var(--gold),var(--gold-2));color:#111;font-weight:900;border-color:transparent}
+.btn.ghost{background:transparent}
+.btn.small{padding:8px 12px;font-size:.9rem}
+.glow{position:relative;isolation:isolate}
+.glow::after{
+  content:"";position:absolute;inset:-2px;border-radius:14px;pointer-events:none;opacity:.0;
+  background:conic-gradient(from 0deg, rgba(245,214,123,.3), rgba(212,175,55,.1), transparent 30%, transparent 70%, rgba(212,175,55,.2));
+  filter:blur(8px);transition:opacity .25s ease
+}
+.glow:hover::after{opacity:.9}
+
+.hero{position:relative;min-height:74vh;padding:100px 20px 50px;overflow:hidden}
+#heroFx{position:absolute;inset:0;width:100%;height:100%}
+.hero-inner{max-width:1080px;margin:0 auto;text-align:center;position:relative;z-index:2}
+.hero h1{font-size:2.6rem;margin:0 0 10px}
+.gold{color:var(--gold)}
+.lede{opacity:.9;max-width:820px;margin:0 auto 20px}
+.hero-cta{display:flex;gap:12px;justify-content:center;margin:18px 0 8px}
+.badges{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;opacity:.9}
+.badges span{border:1px solid #242424;padding:6px 10px;border-radius:999px;background:#111}
+.noise{position:absolute;inset:0;opacity:.12;pointer-events:none;background-image:url('assets/noise.png');mix-blend:overlay}
+
+section{padding:60px 20px;scroll-margin-top:84px}
+section h2{font-size:1.9rem;margin:0 0 18px;text-align:center}
+
+.how .steps{max-width:1080px;margin:0 auto;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+.card{background:var(--panel);border:1px solid #1f1f1f;padding:18px;border-radius:16px;box-shadow:var(--shadow)}
+
+.generator{max-width:1080px;margin:0 auto}
+.gen-form .grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.gen-form label{display:flex;flex-direction:column;gap:6px;font-size:.95rem}
+.gen-form input,.gen-form select{background:#121212;border:1px solid #222;color:var(--txt);padding:12px;border-radius:10px}
+.form-actions{display:flex;gap:10px;margin-top:12px}
+.best-time{margin-top:24px}
+.time-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.time-grid ul{list-style:none;padding:0;margin:0}
+.time-grid li{background:#111;border:1px solid #262626;padding:10px;border-radius:10px}
+
+.outputs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:22px}
+.post{background:#101010;border:1px solid #222;border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:10px;box-shadow:var(--shadow)}
+.post pre{white-space:pre-wrap;margin:0;font-family:ui-monospace, Menlo, Consolas, monospace}
+.meta{display:flex;gap:10px;flex-wrap:wrap}
+.meta .pill{background:#0f0f0f;border:1px solid #262626;padding:6px 10px;border-radius:999px;font-size:.85rem}
+.actions{display:flex;gap:8px}
+
+.features .grid-3{max-width:1080px;margin:0 auto;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+
+.pricing .price-grid{max-width:1080px;margin:0 auto;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+.price-card{background:#101010;border:1px solid #222;border-radius:16px;padding:20px;position:relative;transform:translateZ(0)}
+.price-card .price{font-size:2rem;margin:.2rem 0 1rem;color:var(--gold)}
+.price-card.featured{outline:2px solid var(--gold)}
+.price-card:hover{box-shadow:0 0 0 1px rgba(212,175,55,.25), 0 12px 30px rgba(0,0,0,.45)}
+.ribbon{position:absolute;top:12px;right:-16px;background:linear-gradient(135deg,var(--gold),var(--gold-2));color:#111;padding:6px 12px;border-radius:999px;font-weight:800}
+
+.case .case-wrap{max-width:1080px;margin:0 auto;display:grid;grid-template-columns:2fr 1fr;gap:16px}
+.case-card{display:grid;gap:10px}
+.case-metric{background:#121212;border:1px solid #242424;border-radius:12px;padding:16px;text-align:center}
+.case-metric span{font-size:1.8rem;color:var(--ok);display:block}
+
+.faq details{max-width:880px;margin:10px auto;background:#101010;border:1px solid #222;border-radius:12px;padding:14px}
+.faq summary{cursor:pointer}
+
+.cta{text-align:center;background:radial-gradient(800px 300px at 50% 0, rgba(212,175,55,.18), transparent 60%)}
+.footer{padding:26px 20px;border-top:1px solid #1a1a1a;text-align:center;opacity:.8}
+
+.reveal{opacity:0;transform:translateY(18px);transition:opacity .6s ease, transform .6s ease}
+.reveal.in{opacity:1;transform:none}
+
+/* Update toast */
+.toast{
+  position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:80;
+  display:flex;gap:10px;align-items:center;
+  background:#121212;border:1px solid #2a2a2a;border-radius:12px;padding:10px 12px;box-shadow:var(--shadow)
+}
+.toast[hidden]{display:none}
+
+.hidden{display:none}
+
+@media (max-width: 980px){
+  .how .steps,.features .grid-3,.pricing .price-grid,.outputs,.gen-form .grid,.case .case-wrap,.time-grid{grid-template-columns:1fr}
+  .hero h1{font-size:2.1rem}
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce){
+  .glow::after{display:none}
+  .reveal{transition:none}
+}

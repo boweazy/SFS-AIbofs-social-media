@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>SmartFlow AIbot-Social — Grow Faster with Smarter Social</title>
+  <meta name="description" content="AI social media manager for small businesses & entrepreneurs. Generate platform-native posts, schedule at best times, export CSV/ICS, and track what works."/>
+  <meta name="theme-color" content="#0b0b0b"/>
+  <link rel="icon" href="assets/favicon.svg"/>
+  <link rel="manifest" href="manifest.webmanifest"/>
+
+  <!-- iOS install hint -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="SmartFlow AIbot-Social"/>
+  <meta property="og:description" content="Post smarter. Grow faster. Sell more."/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:image" content="assets/og.png"/>
+
+  <!-- JSON-LD -->
+  <script type="application/ld+json">
+  {
+    "@context":"https://schema.org",
+    "@type":"SoftwareApplication",
+    "name":"SmartFlow AIbot-Social",
+    "applicationCategory":"MarketingApplication",
+    "operatingSystem":"Web",
+    "offers":{"@type":"Offer","price":"19","priceCurrency":"GBP"},
+    "publisher":{"@type":"Organization","name":"SmartFlow Systems"}
+  }
+  </script>
+
+  <link rel="preload" href="styles.css" as="style">
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="script.js"></script>
+</head>
+<body>
+  <!-- Sticky Nav -->
+  <header class="nav" role="banner">
+    <a class="brand" href="#hero" aria-label="SmartFlow Systems">
+      <img src="assets/favicon.svg" alt="" width="26" height="26" decoding="async"/>
+      <span>SmartFlow Systems</span>
+    </a>
+    <nav class="links" role="navigation" aria-label="Primary">
+      <a href="#how">How it works</a>
+      <a href="#generator">Demo</a>
+      <a href="#features">Features</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#case">Case study</a>
+      <a class="btn small glow" href="#cta">Try it free</a>
+    </nav>
+  </header>
+
+  <!-- Hero -->
+  <section id="hero" class="hero" aria-label="Hero">
+    <canvas id="heroFx" aria-hidden="true"></canvas>
+    <div class="hero-inner" data-animate>
+      <h1><span class="gold">Your AI Social Media Manager</span> for real small-biz growth</h1>
+      <p class="lede">Generate platform-native posts, schedule at the best time, and convert attention into bookings & sales — all in one place.</p>
+      <div class="hero-cta">
+        <a class="btn primary glow" href="#generator">Generate your first post</a>
+        <a class="btn ghost" href="#pricing">See pricing</a>
+      </div>
+      <div class="badges">
+        <span data-animate>⚡ Best-time scheduling</span>
+        <span data-animate>📊 Hook & hashtag insights</span>
+        <span data-animate>🧠 Presets & tones per niche</span>
+      </div>
+    </div>
+    <div class="noise" aria-hidden="true"></div>
+  </section>
+
+  <!-- How it Works -->
+  <section id="how" class="how">
+    <h2 data-animate>How it works</h2>
+    <div class="steps">
+      <div class="card" data-animate>
+        <h3>1) Tell us your business</h3>
+        <p>Retail, fitness, services, food, creators, ecom — we adapt your voice instantly.</p>
+      </div>
+      <div class="card" data-animate>
+        <h3>2) Generate & schedule</h3>
+        <p>Hook → benefit + proof → CTA → smart hashtags. Export CSV/ICS or plug into tools.</p>
+      </div>
+      <div class="card" data-animate>
+        <h3>3) Grow faster</h3>
+        <p>Post at the right time, learn what works, and turn views into customers.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Generator -->
+  <section id="generator" class="generator">
+    <h2 data-animate>Live Demo — Generate Posts</h2>
+    <form id="gen-form" class="gen-form" autocomplete="off" data-animate>
+      <div class="grid">
+        <label>Business/Niche
+          <input id="niche" placeholder="e.g. Coffee shop, fitness coach, electrician" />
+        </label>
+        <label>Offer / Angle
+          <input id="offer" placeholder="e.g. New bundle, 10% off, free consult" />
+        </label>
+        <label>Tone
+          <select id="tone" aria-label="Tone">
+            <option value="helpful">Helpful</option>
+            <option value="concise">Concise</option>
+            <option value="friendly" selected>Friendly</option>
+            <option value="bold">Bold</option>
+          </select>
+        </label>
+        <label>Platform
+          <select id="platform" aria-label="Platform">
+            <option value="X">X (Twitter)</option>
+            <option value="LinkedIn" selected>LinkedIn</option>
+          </select>
+        </label>
+        <label>Audience
+          <input id="audience" placeholder="e.g. busy parents, founders, new homeowners" />
+        </label>
+        <label>Count
+          <input id="count" type="number" min="1" max="10" value="3"/>
+        </label>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn primary glow">Generate</button>
+        <button type="button" id="clear" class="btn ghost">Clear</button>
+      </div>
+    </form>
+
+    <div class="best-time" data-animate>
+      <h3>Recommended posting windows (your local time)</h3>
+      <div class="time-grid">
+        <div>
+          <h4>X</h4>
+          <ul id="times-x"></ul>
+        </div>
+        <div>
+          <h4>LinkedIn</h4>
+          <ul id="times-li"></ul>
+        </div>
+      </div>
+      <p class="note">Defaults from benchmarks; Pro adapts to your audience automatically.</p>
+    </div>
+
+    <div id="outputs" class="outputs" aria-live="polite"></div>
+
+    <div id="exports" class="exports hidden" data-animate>
+      <button class="btn small glow" id="downloadCsv">Download CSV</button>
+      <button class="btn small glow" id="downloadIcs">Download ICS</button>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <section id="features" class="features">
+    <h2 data-animate>What makes SmartFlow different</h2>
+    <div class="grid-3">
+      <div class="card" data-animate>
+        <h3>Platform-native copy</h3>
+        <p>Winning structure: hook → benefit + proof → CTA → rotating hashtags.</p>
+      </div>
+      <div class="card" data-animate>
+        <h3>Best-time scheduler</h3>
+        <p>Start with proven windows, then learn from your data.</p>
+      </div>
+      <div class="card" data-animate>
+        <h3>Exports that fit</h3>
+        <p>One click to CSV for bulk tools and ICS for your calendar.</p>
+      </div>
+      <div class="card" data-animate>
+        <h3>Voice presets</h3>
+        <p>Helpful, concise, friendly, bold — or blend your own tone.</p>
+      </div>
+      <div class="card" data-animate>
+        <h3>Hashtag IQ</h3>
+        <p>Rotates 3–6 relevant tags; track which ones move the needle.</p>
+      </div>
+      <div class="card" data-animate>
+        <h3>Built for speed</h3>
+        <p>Pure HTML/CSS/JS, instant loads, smooth motion — no heavy frameworks.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Pricing -->
+  <section id="pricing" class="pricing">
+    <h2 data-animate>Pricing</h2>
+    <div class="price-grid">
+      <div class="price-card" data-animate>
+        <h3>Starter</h3>
+        <p class="price">£19/mo</p>
+        <ul>
+          <li>30 posts / month</li>
+          <li>1 platform</li>
+          <li>Templates + schedule</li>
+        </ul>
+        <a class="btn" href="#cta">Start free</a>
+      </div>
+      <div class="price-card featured" data-animate>
+        <div class="ribbon">Popular</div>
+        <h3>Pro</h3>
+        <p class="price">£49/mo</p>
+        <ul>
+          <li>90 posts / month</li>
+          <li>2 platforms</li>
+          <li>Smart Replies + Best-Time</li>
+          <li>CSV/ICS export</li>
+        </ul>
+        <a class="btn primary glow" href="#cta">Get Pro</a>
+      </div>
+      <div class="price-card" data-animate>
+        <h3>Premium</h3>
+        <p class="price">£99/mo</p>
+        <ul>
+          <li>Unlimited drafts</li>
+          <li>Bulk schedule + Experiments</li>
+          <li>Team seats (2)</li>
+          <li>Priority support</li>
+        </ul>
+        <a class="btn" href="#cta">Go Premium</a>
+      </div>
+    </div>
+    <p class="note">Referral: 20% recurring for 12 months.</p>
+  </section>
+
+  <!-- Case Study -->
+  <section id="case" class="case">
+    <h2 data-animate>Mini Case Study</h2>
+    <div class="case-wrap">
+      <div class="case-copy" data-animate>
+        <h3>Local shop → +35% weekly sales in 3 weeks</h3>
+        <ul>
+          <li>Daily posts using helpful/friendly voice</li>
+          <li>Re-posting winners at peak times</li>
+          <li>Direct checkout links in CTA</li>
+        </ul>
+        <p><strong>Result:</strong> more footfall, more repeat customers, and steady follower growth.</p>
+      </div>
+      <div class="case-card" data-animate>
+        <div class="case-metric"><span>+35%</span><small>Weekly sales</small></div>
+        <div class="case-metric"><span>+43%</span><small>Profile visits</small></div>
+        <div class="case-metric"><span>+28%</span><small>Engagement rate</small></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section id="cta" class="cta">
+    <h2 data-animate>Ready to grow faster?</h2>
+    <p data-animate>Try SmartFlow AIbot-Social free today. No commitment.</p>
+    <a class="btn primary glow" href="#" onclick="alert('Demo CTA — wire to signup or Stripe when ready.');return false;">Start free</a>
+  </section>
+
+  <!-- Update Toast (hidden by default) -->
+  <div id="update-toast" class="toast" role="status" aria-live="polite" hidden>
+    <span>Update ready</span>
+    <button id="refresh-now" class="btn small glow">Refresh</button>
+    <button id="dismiss-toast" class="btn small">Dismiss</button>
+  </div>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <p>© <span id="year"></span> SmartFlow Systems — Black & Gold, Smooth & Futuristic.</p>
+  </footer>
+</body>
+</html>

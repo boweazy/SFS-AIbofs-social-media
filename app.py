@@ -284,11 +284,89 @@ PRICING_HTML = """
 # ---------- UI Routes ----------
 @app.get("/")
 def home():
-    return render_template_string(LANDING_HTML)
+    """Serve the new PWA interface"""
+    try:
+        with open('index.html', 'r') as f:
+            return f.read()
+    except FileNotFoundError:
+        return render_template_string(LANDING_HTML)
 
 @app.get("/pricing")
 def pricing():
-    return render_template_string(PRICING_HTML)
+    """Legacy pricing route - redirect to PWA with anchor"""
+    return redirect("/#pricing")
+
+# ---------- Original Flask Admin Routes ----------
+# PWA Service Worker and Manifest routes
+@app.route("/sw.js")
+def service_worker():
+    """Serve the service worker"""
+    try:
+        with open('sw.js', 'r') as f:
+            content = f.read()
+        response = app.make_response(content)
+        response.headers['Content-Type'] = 'application/javascript'
+        response.headers['Cache-Control'] = 'no-cache'
+        return response
+    except FileNotFoundError:
+        return "Service worker not found", 404
+
+@app.route("/manifest.webmanifest")
+def manifest():
+    """Serve the PWA manifest"""
+    try:
+        with open('manifest.webmanifest', 'r') as f:
+            content = f.read()
+        response = app.make_response(content)
+        response.headers['Content-Type'] = 'application/manifest+json'
+        return response
+    except FileNotFoundError:
+        return "Manifest not found", 404
+
+@app.route("/offline.html")
+def offline():
+    """Serve the offline fallback page"""
+    try:
+        with open('offline.html', 'r') as f:
+            return f.read()
+    except FileNotFoundError:
+        return "Offline page not found", 404
+
+# Serve PWA files (styles.css, script.js, index.html)
+@app.route("/styles.css")
+def serve_styles():
+    try:
+        with open('styles.css', 'r') as f:
+            content = f.read()
+        response = app.make_response(content)
+        response.headers['Content-Type'] = 'text/css'
+        return response
+    except FileNotFoundError:
+        return "Styles not found", 404
+
+@app.route("/script.js") 
+def serve_script():
+    try:
+        with open('script.js', 'r') as f:
+            content = f.read()
+        response = app.make_response(content)
+        response.headers['Content-Type'] = 'application/javascript'
+        return response
+    except FileNotFoundError:
+        return "Script not found", 404
+
+@app.route("/index.html")
+def serve_index():
+    try:
+        with open('index.html', 'r') as f:
+            return f.read()
+    except FileNotFoundError:
+        return "Index not found", 404
+
+# Serve assets directory
+@app.route("/assets/<path:filename>")
+def serve_assets(filename):
+    return send_from_directory("assets", filename)
 
 # ---------- Plan gating ----------
 @app.get("/feature/<name>")

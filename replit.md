@@ -9,17 +9,18 @@ Preferred communication style: Simple, everyday language.
 # System Architecture
 
 ## Frontend Architecture
-- **Single Page Application**: Uses vanilla JavaScript with a class-based architecture (`SocialAI` class)
-- **Dark Theme UI**: Custom CSS with gold accent colors, responsive grid layout
-- **Real-time Updates**: Polling mechanism to refresh post status and display updates
-- **Localization**: Configured for UK market with en-GB locale, 24-hour time format, and GBP currency
+- **Progressive Web App**: Vanilla HTML/CSS/JS with service worker for offline functionality
+- **Dark Theme UI**: Black background with gold accent colors (#d4af37, #f5d67b), smooth animations
+- **Canvas Effects**: Interactive hero section with animated golden rays following mouse movement
+- **Responsive Design**: Mobile-optimized grid layouts, accessible navigation, reduced motion support
+- **UK Localization**: en-GB locale for time formatting, GBP pricing display
 
-## Backend Architecture
-- **FastAPI Framework**: Asynchronous Python web framework for REST API endpoints (requires uvicorn, not gunicorn)
-- **Absolute Path Resolution**: Uses `BASE_DIR = Path(__file__).resolve().parent` for reliable static file serving
-- **Single-file JSON Storage**: Simple file-based data persistence using `Store` class with async locking
-- **Dataclass Models**: Uses Python dataclasses for `PostRecord` and `State` with automatic serialization
-- **Static File Serving**: Serves frontend assets directly through FastAPI with fallback error handling
+## Backend Architecture  
+- **Flask Framework**: Python web framework serving PWA assets and maintaining admin functionality
+- **PWA Asset Serving**: Direct file serving for styles.css, script.js, manifest.webmanifest, service worker
+- **SQLAlchemy Models**: Multi-tenant database with Tenant, User, Booking, AuditLog models
+- **Static File Routing**: Assets served from /assets/ directory, legacy admin dashboard preserved
+- **Gunicorn WSGI**: Production-ready server configuration with proper static file handling
 
 ## Data Storage
 - **File-based Storage**: JSON file (`data.json`) containing application state
@@ -39,17 +40,19 @@ Preferred communication style: Simple, everyday language.
 # Current Status (August 17, 2025)
 
 ## Recent Changes
-- **Complete Flask Rebuild**: Implemented comprehensive SmartFlow Systems booking/admin platform
-- **Logo Integration**: Successfully added SmartFlow Systems logo to header templates with exact styling requested
-- **Flask Architecture**: Multi-tenant booking system with SQLAlchemy, Stripe integration, and APScheduler
-- **Comprehensive Feature Set**: Landing/pricing pages, admin dashboard, booking system, email/SMS notifications
+- **PWA Upgrade Complete**: Transformed Flask app into fast Progressive Web App with offline support
+- **Vanilla HTML/CSS/JS**: Pure web technologies for instant loading and smooth animations
+- **Service Worker**: Implemented offline caching with network-first strategy for HTML and cache-first for assets
+- **PWA Manifest**: Installable app with dark theme and SmartFlow Systems branding
+- **SmartFlow AIbot-Social**: New social media management interface with AI post generation
 
 ## Current Deployment Status
-- **Flask Application**: Full-featured booking and admin management system
-- **Logo Branding**: Logo properly integrated in header with specified styling: height:64px;margin:0 auto 8px;display:block
-- **Template Structure**: Landing, pricing, admin, and test booking pages with dark black/gold theme
-- **Database**: SQLite with multi-tenant user management, bookings, and audit logging
-- **Notifications**: Email (SMTP) and SMS (Vonage) with APScheduler reminders
+- **Progressive Web App**: Fast, installable app with offline functionality and instant updates
+- **Service Worker Active**: Caches critical files, handles offline scenarios with fallback page
+- **Social Media Demo**: Live post generator with platform-native copy for X/Twitter and LinkedIn  
+- **PWA Features**: Manifest, favicon, offline.html, update toast notifications
+- **Flask Backend**: Maintains admin dashboard and booking system for legacy functionality
+- **Dark Theme**: Black+gold aesthetic with smooth animations and responsive design
 
 ## Comprehensive Features Implemented
 
