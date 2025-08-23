@@ -6,9 +6,15 @@ const db = getDB();
 const a1 = randomUUID();
 const a2 = randomUUID();
 
+// Clear existing data (respect foreign key constraints)
+db.prepare('DELETE FROM analytics').run();
+db.prepare('DELETE FROM posts').run();
+db.prepare('DELETE FROM templates').run();
+db.prepare('DELETE FROM accounts').run();
+
 // Seed accounts
-db.prepare('INSERT OR REPLACE INTO accounts (id,platform,handle,connected) VALUES (?,?,?,1)').run(a1, 'x', '@smartflow');
-db.prepare('INSERT OR REPLACE INTO accounts (id,platform,handle,connected) VALUES (?,?,?,1)').run(a2, 'linkedin', 'SmartFlow Systems');
+db.prepare('INSERT INTO accounts (id,platform,handle,connected) VALUES (?,?,?,1)').run(a1, 'x', '@smartflow');
+db.prepare('INSERT INTO accounts (id,platform,handle,connected) VALUES (?,?,?,1)').run(a2, 'linkedin', 'SmartFlow Systems');
 
 // Seed templates
 const templates = [
@@ -17,8 +23,9 @@ const templates = [
   { name: 'Industry Insight', category: 'Thought Leadership', premium: 1, body: 'The {{industry}} is evolving rapidly. Key trends: {{trends}}. What are your thoughts?' },
 ];
 
+// Seed templates
 for (const t of templates) {
-  db.prepare('INSERT OR REPLACE INTO templates (id,name,category,premium,body) VALUES (?,?,?,?,?)')
+  db.prepare('INSERT INTO templates (id,name,category,premium,body) VALUES (?,?,?,?,?)')
     .run(randomUUID(), t.name, t.category, t.premium, t.body);
 }
 
@@ -29,8 +36,9 @@ const posts = [
   { account_id: a1, body: 'Coming soon: Advanced analytics dashboard with real-time insights. Stay tuned! #analytics', status: 'scheduled', scheduled_at: new Date(Date.now() + 24*60*60*1000).toISOString() },
 ];
 
+// Seed posts
 for (const p of posts) {
-  db.prepare('INSERT OR REPLACE INTO posts (id,account_id,body,status,scheduled_at,posted_at) VALUES (?,?,?,?,?,?)')
+  db.prepare('INSERT INTO posts (id,account_id,body,status,scheduled_at,posted_at) VALUES (?,?,?,?,?,?)')
     .run(randomUUID(), p.account_id, p.body, p.status, p.scheduled_at || null, p.status === 'posted' ? new Date().toISOString() : null);
 }
 
