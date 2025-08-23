@@ -1,0 +1,29 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --sf-dark: #1a1a1a;
+  --sf-gold: #d4af37;
+  --sf-gold-light: #f4e29b;
+}
+
+body {
+  @apply bg-sf-dark text-white font-sans;
+}
+
+.sf-card {
+  @apply bg-gray-800 border border-gray-700 rounded-lg p-4;
+}
+
+.sf-button-primary {
+  @apply bg-sf-gold hover:bg-sf-gold-light text-black px-4 py-2 rounded font-medium transition-colors;
+}
+
+.sf-button-secondary {
+  @apply border border-sf-gold text-sf-gold hover:bg-sf-gold hover:text-black px-4 py-2 rounded font-medium transition-colors;
+}
+
+.sf-input {
+  @apply bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-sf-gold;
+}

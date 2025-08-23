@@ -82,6 +82,7 @@
     "side-channel-weakmap": "^1.0.2",
     "statuses": "^2.0.2",
     "toidentifier": "^1.0.1",
+    "tsx": "^4.20.4",
     "type-is": "^2.0.1",
     "unpipe": "^1.0.0",
     "vary": "^1.1.2",

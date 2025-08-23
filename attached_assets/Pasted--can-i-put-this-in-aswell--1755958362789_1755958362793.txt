@@ -1,0 +1,3117 @@
+ can i put this in aswell                                                                                                                                         REPLIT AGENT PROMPT — SFS SocialScale Parity Pack (for SFS-AIbofs-social-media) 
+
+WHAT IT DOES
+- Upgrades your existing Python+Flask social generator into a modern, two-part app: a Node/TypeScript API server (scheduling, accounts, templates, analytics, websockets) and a React/Vite client with SmartFlow styling. It can call your current Python generator or a Node AI fallback. Includes optional same-domain Flask hosting, OAuth stubs, migration tools, live metrics, and SmartFlowSite 4-tile linking.
+
+FILES & WHERE THEY GO
+- Drop the entire `/sfs-socialscale/` folder (and other snippets exactly as below) into the root of your SFS-AIbofs-social-media repo.
+- Create the files exactly at the paths shown in each code block below (client/, server/, envs, scripts, SmartFlowSite snippets, Flask UI bridge).
+
+SETUP
+- Replit Node 18+; npm installed. (If using Python generator, keep your Flask app running on :5000.)
+- Copy `.env.example` → `.env` and fill values (ADMIN_API_KEY, PYTHON_SERVICE_URL=http://localhost:5000 if using Flask, etc.).
+- Install: `cd sfs-socialscale && npm i && npm -w server i && npm -w client i`
+- (Optional) Seed: `npm -w server run seed` and `npm -w server run metrics:seed`
+
+HOW TO RUN (REPLIT)
+- Dev (Node): set Run to `cd sfs-socialscale && npm run dev` (starts API :8787 and client :5173).
+- Flask generator (optional): run your Flask `python3 app.py` in a second shell (listening on :5000).
+- Prod (Node only): `cd sfs-socialscale && npm run build && npm start`
+- Prod (Flask serves UI + proxy to Node): build client, mount SPA in Flask per code below, then `python3 app.py`.
+
+— CODE STARTS (paste these EXACT files/blocks) —
+
+# PLAN (pseudocode)
+- Understand current repo (Python+Flask PWA + Node wrapper) and goal (feature parity with SocialScaleBooster UI/flows; keep your own layout but better).
+- Decide integration shape:
+  - Keep your existing Python generator endpoints.
+  - Add a new **server/** (TypeScript + Express) for: scheduling, accounts, templates, analytics, websocket.
+  - Add a modern **client/** (React + Vite + Tailwind + shadcn) with a clean, responsive layout.
+  - Provide adapters so the new UI can call either the Python generator or Node AI if Python is disabled.
+- Data model (SQLite for quick start): accounts, posts, schedules, templates, analytics_events.
+- Features to include now (parity baseline):
+  1) Post generator (topics → multiple variants, hashtags, suggested image alt). Calls Python `/api/generate_posts` when available.
+  2) Scheduler (create/update/delete jobs; timezones; cron-like simple repeat).
+  3) Accounts (connect placeholders for X/Twitter, LinkedIn, Instagram; store tokens securely via env or vault; in demo, mock).
+  4) Templates/Marketplace (basic browse/install templates; premium flag placeholder).
+  5) Analytics (views/ctr/engagement; realtime demo via WS; historical persisted in SQLite).
+  6) PWA: offline shell + update prompt (client-side only; server serves static).
+- Security: CORS allowed from UI origin; env-config; simple API keys for admin; NEVER store raw secrets in DB.
+- Layout: left nav; header with org switch + create; cards; tables; toasts; dark/light.
+- Deliverables: monorepo (workspaces) with **client/** and **server/**; .env.example; scripts; seed data.
+- Migration: drop this folder into your repo root; set `PYTHON_SERVICE_URL` to your Flask server. Start both servers.
+
+---
+
+```txt
+# /sfs-socialscale/ (drop this folder into the root of SFS-AIbofs-social-media)
+# ├─ package.json
+# ├─ README.md
+# ├─ .env.example
+# ├─ client/
+# └─ server/
+jsonc
+Copy
+Edit
+// /sfs-socialscale/package.json (root workspaces)
+{
+  "name": "sfs-socialscale",
+  "private": true,
+  "workspaces": ["client", "server"],
+  "scripts": {
+    "dev": "npm -w server run dev & npm -w client run dev",
+    "build": "npm -w server run build && npm -w client run build",
+    "start": "npm -w server start"
+  }
+}
+env
+Copy
+Edit
+# /sfs-socialscale/.env.example
+# Shared
+PORT=8787
+CLIENT_ORIGIN=http://localhost:5173
+DATABASE_URL=./data.sqlite
+ADMIN_API_KEY=change-me
+# AI (choose one path)
+OPENAI_API_KEY=
+# Optional: point to your existing Python generator (preferred)
+PYTHON_SERVICE_URL=http://localhost:5000
+md
+Copy
+Edit
+<!-- /sfs-socialscale/README.md -->
+# SFS SocialScale Parity Pack
+
+## Quickstart
+```bash
+cd sfs-socialscale
+cp .env.example .env
+npm i
+npm -w server i
+npm -w client i
+npm run dev
+Server: http://localhost:8787
+
+Client: http://localhost:5173
+
+To use your Python generator, run your Flask app and set PYTHON_SERVICE_URL.
+
+Notes
+SQLite dev DB is created automatically.
+
+Admin endpoints require x-api-key: ADMIN_API_KEY.
+
+pgsql
+Copy
+Edit
+
+```jsonc
+// /sfs-socialscale/server/package.json
+{
+  "name": "sfs-server",
+  "type": "module",
+  "version": "0.1.0",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "seed": "tsx src/seed.ts"
+  },
+  "dependencies": {
+    "better-sqlite3": "^9.4.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "luxon": "^3.4.4",
+    "node-cron": "^3.0.3",
+    "socket.io": "^4.7.5",
+    "zod": "^3.23.8",
+    "node-fetch": "^3.3.2"
+  },
+  "devDependencies": {
+    "tsx": "^4.7.0",
+    "typescript": "^5.5.4"
+  }
+}
+json
+Copy
+Edit
+// /sfs-socialscale/server/tsconfig.json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "outDir": "dist",
+    "rootDir": "src",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true
+  },
+  "include": ["src/**/*"]
+}
+ts
+Copy
+Edit
+// /sfs-socialscale/server/src/db.ts
+import Database from 'better-sqlite3';
+
+export type Account = { id: string; platform: 'x'|'linkedin'|'instagram'; handle: string; connected: number; token_hint?: string|null };
+export type Template = { id: string; name: string; category: string; premium: number; body: string };
+export type Post = { id: string; account_id: string; body: string; image_alt?: string|null; hashtags?: string|null; status: 'draft'|'scheduled'|'posted'|'failed'; scheduled_at?: string|null; posted_at?: string|null };
+export type Analytics = { id: string; post_id: string; metric: string; value: number; ts: string };
+
+let db: Database.Database | null = null;
+export function getDB() {
+  if (!db) {
+    const url = process.env.DATABASE_URL || './data.sqlite';
+    db = new Database(url);
+    init(db);
+  }
+  return db!;
+}
+
+function init(d: Database.Database) {
+  d.exec(`
+    PRAGMA journal_mode=WAL;
+    CREATE TABLE IF NOT EXISTS accounts (
+      id TEXT PRIMARY KEY,
+      platform TEXT NOT NULL,
+      handle TEXT NOT NULL,
+      connected INTEGER NOT NULL DEFAULT 0,
+      token_hint TEXT
+    );
+    CREATE TABLE IF NOT EXISTS templates (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      category TEXT NOT NULL,
+      premium INTEGER NOT NULL DEFAULT 0,
+      body TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS posts (
+      id TEXT PRIMARY KEY,
+      account_id TEXT NOT NULL,
+      body TEXT NOT NULL,
+      image_alt TEXT,
+      hashtags TEXT,
+      status TEXT NOT NULL,
+      scheduled_at TEXT,
+      posted_at TEXT,
+      FOREIGN KEY (account_id) REFERENCES accounts(id)
+    );
+    CREATE TABLE IF NOT EXISTS analytics (
+      id TEXT PRIMARY KEY,
+      post_id TEXT NOT NULL,
+      metric TEXT NOT NULL,
+      value REAL NOT NULL,
+      ts TEXT NOT NULL,
+      FOREIGN KEY (post_id) REFERENCES posts(id)
+    );
+  `);
+}
+ts
+Copy
+Edit
+// /sfs-socialscale/server/src/util.ts
+import { randomUUID } from 'node:crypto';
+export const uuid = () => randomUUID();
+export const ok = <T>(data: T) => ({ ok: true, data });
+export const err = (message: string, code = 400) => ({ ok: false, error: { message, code } });
+export const requireKey = (key?: string, header?: string) => key && header && key === header;
+ts
+Copy
+Edit
+// /sfs-socialscale/server/src/adapters/python.ts
+// Proxies to your existing Python generator if configured
+import fetch from 'node-fetch';
+
+export async function generateViaPython(input: {
+  topic: string; platform: 'x'|'linkedin'; count: number;
+}): Promise<any> {
+  const base = process.env.PYTHON_SERVICE_URL;
+  if (!base) throw new Error('PYTHON_SERVICE_URL not set');
+  const res = await fetch(`${base.replace(/\/$/, '')}/api/generate_posts`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw new Error(`Python service ${res.status}`);
+  return res.json();
+}
+ts
+Copy
+Edit
+// /sfs-socialscale/server/src/ai.ts
+// Fallback AI generator if Python is not running (uses OpenAI when available)
+import fetch from 'node-fetch';
+
+export async function generatePostsFallback({ topic, platform, count }: { topic: string; platform: 'x'|'linkedin'; count: number; }) {
+  const apiKey = process.env.OPENAI_API_KEY;
+  const items = [] as Array<{ text: string; alt_text: string; hashtags: string[] }>;
+  for (let i = 0; i < count; i++) {
+    if (!apiKey) {
+      items.push({
+        text: `${platform.toUpperCase()} post about ${topic} (${i+1})`,
+        alt_text: `Illustration about ${topic}`,
+        hashtags: ['#ai', '#social']
+      });
+      continue;
+    }
+    const prompt = `Write a ${platform==='x'?'concise tweet <=280 chars':'LinkedIn post ~2-3 sentences'} about: ${topic}. Provide 1 line of hashtags.`;
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'authorization': `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.7
+      })
+    });
+    const j = await res.json();
+    const content: string = j.choices?.[0]?.message?.content ?? '';
+    const [text, hashLine=''] = content.split('\n').map(s=>s.trim());
+    const hashtags = hashLine.split(/\s+/).filter(Boolean);
+    items.push({ text, alt_text: `Alt for ${topic}`, hashtags });
+  }
+  return { ok: true, data: items };
+}
+ts
+Copy
+Edit
+// /sfs-socialscale/server/src/routes.ts
+import { Router } from 'express';
+import { DateTime } from 'luxon';
+import { getDB } from './db.js';
+import { uuid, ok, err } from './util.js';
+import { generateViaPython } from './adapters/python.js';
+import { generatePostsFallback } from './ai.js';
+
+export const api = Router();
+
+// Health
+api.get('/health', (_req, res) => res.json(ok({ status: 'up' })));
+
+// Accounts (mock connect)
+api.get('/accounts', (req, res) => {
+  const rows = getDB().prepare('SELECT * FROM accounts').all();
+  res.json(ok(rows));
+});
+api.post('/accounts', (req, res) => {
+  const { platform, handle, token_hint } = req.body ?? {};
+  if (!platform || !handle) return res.status(400).json(err('platform+handle required'));
+  const id = uuid();
+  getDB().prepare('INSERT INTO accounts (id, platform, handle, connected, token_hint) VALUES (?,?,?,?,?)')
+    .run(id, platform, handle, 1, token_hint ?? null);
+  res.json(ok({ id }));
+});
+
+// Templates
+api.get('/templates', (_req, res) => {
+  const rows = getDB().prepare('SELECT * FROM templates').all();
+  res.json(ok(rows));
+});
+api.post('/templates', (req, res) => {
+  const { name, category, premium, body } = req.body ?? {};
+  const id = uuid();
+  getDB().prepare('INSERT INTO templates (id,name,category,premium,body) VALUES (?,?,?,?,?)')
+    .run(id, name, category, premium?1:0, body);
+  res.json(ok({ id }));
+});
+
+// Generator → Python or fallback
+api.post('/generate_posts', async (req, res) => {
+  const { topic, platform='x', count=3 } = req.body ?? {};
+  try {
+    const result = process.env.PYTHON_SERVICE_URL
+      ? await generateViaPython({ topic, platform, count })
+      : await generatePostsFallback({ topic, platform, count });
+    res.json(result);
+  } catch (e: any) {
+    res.status(500).json(err(e.message));
+  }
+});
+
+// Posts + scheduling
+api.get('/posts', (_req, res) => {
+  const rows = getDB().prepare('SELECT * FROM posts ORDER BY COALESCE(scheduled_at, posted_at) DESC').all();
+  res.json(ok(rows));
+});
+api.post('/posts', (req, res) => {
+  const { account_id, body, image_alt, hashtags, scheduled_at } = req.body ?? {};
+  if (!account_id || !body) return res.status(400).json(err('account_id+body required'));
+  const id = uuid();
+  getDB().prepare('INSERT INTO posts (id,account_id,body,image_alt,hashtags,status,scheduled_at) VALUES (?,?,?,?,?,?,?)')
+    .run(id, account_id, body, image_alt ?? null, (hashtags??[]).join(' '), scheduled_at ?? null, scheduled_at? 'scheduled':'draft');
+  res.json(ok({ id }));
+});
+api.patch('/posts/:id', (req, res) => {
+  const { id } = req.params;
+  const { status, scheduled_at } = req.body ?? {};
+  getDB().prepare('UPDATE posts SET status=?, scheduled_at=? WHERE id=?').run(status, scheduled_at ?? null, id);
+  res.json(ok({ id }));
+});
+
+// Analytics (basic)
+api.get('/analytics/:postId', (req, res) => {
+  const { postId } = req.params;
+  const rows = getDB().prepare('SELECT metric,value,ts FROM analytics WHERE post_id=? ORDER BY ts').all(postId);
+  res.json(ok(rows));
+});
+
+// Admin: seed demo data
+api.post('/admin/seed', (req, res) => {
+  const key = req.header('x-api-key');
+  if (!process.env.ADMIN_API_KEY || key !== process.env.ADMIN_API_KEY) return res.status(401).json(err('unauthorized', 401));
+  const a1 = uuid(); const a2 = uuid();
+  const db = getDB();
+  db.prepare('INSERT OR IGNORE INTO accounts (id,platform,handle,connected) VALUES (?,?,?,1)')
+    .run(a1, 'x', '@smartflow');
+  db.prepare('INSERT OR IGNORE INTO accounts (id,platform,handle,connected) VALUES (?,?,?,1)')
+    .run(a2, 'linkedin', 'SmartFlow');
+  db.prepare('INSERT OR IGNORE INTO templates (id,name,category,premium,body) VALUES (?,?,?,?,?)')
+    .run(uuid(), 'Product Launch', 'Marketing', 0, 'Announce our new {{product}} with benefits {{benefits}}');
+  res.json(ok({ done: true }));
+});
+ts
+Copy
+Edit
+// /sfs-socialscale/server/src/realtime.ts
+import { Server } from 'socket.io';
+import type { Server as HTTPServer } from 'http';
+import { getDB } from './db.js';
+import { DateTime } from 'luxon';
+
+export function initRealtime(http: HTTPServer) {
+  const io = new Server(http, { cors: { origin: process.env.CLIENT_ORIGIN || '*' } });
+  setInterval(() => {
+    // Demo: emit random engagement events
+    const db = getDB();
+    const posts = db.prepare('SELECT id FROM posts WHERE status IN ("posted","scheduled") ORDER BY RANDOM() LIMIT 1').all();
+    if (posts.length) {
+      const postId = posts[0].id;
+      const value = Math.floor(1 + Math.random() * 5);
+      const ts = DateTime.utc().toISO();
+      db.prepare('INSERT INTO analytics (id,post_id,metric,value,ts) VALUES (?,?,?,?,?)')
+        .run(crypto.randomUUID(), postId, 'engagement', value, ts);
+      io.emit('analytics:update', { postId, metric: 'engagement', value, ts });
+    }
+  }, 4000);
+  return io;
+}
+ts
+Copy
+Edit
+// /sfs-socialscale/server/src/index.ts
+import 'dotenv/config';
+import express from 'express';
+import cors from 'cors';
+import http from 'http';
+import { api } from './routes.js';
+import { initRealtime } from './realtime.js';
+
+const app = express();
+app.use(express.json({ limit: '1mb' }));
+app.use(cors({ origin: process.env.CLIENT_ORIGIN || '*' }));
+
+app.use('/api', api);
+
+const server = http.createServer(app);
+initRealtime(server);
+
+const port = Number(process.env.PORT || 8787);
+server.listen(port, () => console.log(`[server] listening on :${port}`));
+ts
+Copy
+Edit
+// /sfs-socialscale/server/src/seed.ts
+import { getDB } from './db.js';
+import { randomUUID } from 'node:crypto';
+
+const db = getDB();
+const a = randomUUID();
+db.prepare('INSERT INTO accounts (id,platform,handle,connected) VALUES (?,?,?,1)').run(a, 'x', '@demo');
+console.log('Seeded account', a);
+jsonc
+Copy
+Edit
+// /sfs-socialscale/client/package.json
+{
+  "name": "sfs-client",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.50.0",
+    "axios": "^1.7.3",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "socket.io-client": "^4.7.5"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.74",
+    "@types/react-dom": "^18.2.24",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.41",
+    "tailwindcss": "^3.4.10",
+    "typescript": "^5.5.4",
+    "vite": "^5.4.3"
+  }
+}
+ts
+Copy
+Edit
+// /sfs-socialscale/client/vite.config.ts
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+export default defineConfig({ plugins: [react()], server: { port: 5173 } });
+jsonc
+Copy
+Edit
+// /sfs-socialscale/client/tsconfig.json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "jsx": "react-jsx",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "types": ["vite/client"]
+  },
+  "include": ["src"]
+}
+html
+Copy
+Edit
+<!-- /sfs-socialscale/client/index.html -->
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <title>SFS • Dashboard</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+json
+Copy
+Edit
+// /sfs-socialscale/client/public/manifest.webmanifest
+{
+  "name": "SFS Social",
+  "short_name": "SFS",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0b0b0b",
+  "theme_color": "#0b0b0b",
+  "icons": []
+}
+css
+Copy
+Edit
+/* /sfs-socialscale/client/src/index.css */
+@tailwind base; @tailwind components; @tailwind utilities;
+:root { color-scheme: light dark; }
+body { @apply bg-neutral-950 text-neutral-100; }
+.card { @apply rounded-2xl p-4 shadow-xl bg-neutral-900; }
+.btn { @apply rounded-xl px-3 py-2 font-medium bg-white/10 hover:bg-white/20; }
+.input { @apply rounded-xl px-3 py-2 bg-white/5 border border-white/10 w-full; }
+.grid-auto { display: grid; grid-template-columns: repeat(auto-fill,minmax(280px,1fr)); gap: 1rem; }
+ts
+Copy
+Edit
+// /sfs-socialscale/client/src/lib/api.ts
+import axios from 'axios';
+const base = import.meta.env.VITE_API_BASE || 'http://localhost:8787/api';
+export const api = axios.create({ baseURL: base });
+export const listAccounts = () => api.get('/accounts').then(r=>r.data.data);
+export const createAccount = (input: any) => api.post('/accounts', input).then(r=>r.data.data);
+export const listTemplates = () => api.get('/templates').then(r=>r.data.data);
+export const createTemplate = (input: any) => api.post('/templates', input).then(r=>r.data.data);
+export const generatePosts = (input: any) => api.post('/generate_posts', input).then(r=>r.data);
+export const listPosts = () => api.get('/posts').then(r=>r.data.data);
+export const createPost = (input: any) => api.post('/posts', input).then(r=>r.data.data);
+export const analyticsFor = (postId: string) => api.get(`/analytics/${postId}`).then(r=>r.data.data);
+ts
+Copy
+Edit
+// /sfs-socialscale/client/src/main.tsx
+import React from 'react';
+import { createRoot } from 'react-dom/client';
+import './index.css';
+import { App } from './ui/App';
+
+createRoot(document.getElementById('root')!).render(<App />);
+ts
+Copy
+Edit
+// /sfs-socialscale/client/src/ui/App.tsx
+import React from 'react';
+import { Dashboard } from './pages/Dashboard';
+import { Generator } from './pages/Generator';
+import { Schedule } from './pages/Schedule';
+import { Analytics } from './pages/Analytics';
+import { Integrations } from './pages/Integrations';
+import { Marketplace } from './pages/Marketplace';
+
+function useRoute() {
+  const [route, set] = React.useState(location.hash.slice(1)||'dashboard');
+  React.useEffect(()=>{ const on=()=>set(location.hash.slice(1)||'dashboard'); window.addEventListener('hashchange', on); return ()=>window.removeEventListener('hashchange', on); },[]);
+  return route;
+}
+
+export function App() {
+  const route = useRoute();
+  return (
+    <div className="min-h-screen grid grid-cols-[260px_1fr]">
+      <aside className="p-4 border-r border-white/10">
+        <h1 className="text-xl font-bold mb-4">SFS</h1>
+        <nav className="space-y-1">
+          {['dashboard','generator','schedule','analytics','integrations','marketplace'].map(k=> (
+            <a key={k} href={`#${k}`} className="block btn w-full text-left capitalize">{k}</a>
+          ))}
+        </nav>
+      </aside>
+      <main className="p-6 space-y-6">
+        {route==='dashboard' && <Dashboard/>}
+        {route==='generator' && <Generator/>}
+        {route==='schedule' && <Schedule/>}
+        {route==='analytics' && <Analytics/>}
+        {route==='integrations' && <Integrations/>}
+        {route==='marketplace' && <Marketplace/>}
+      </main>
+    </div>
+  );
+}
+ts
+Copy
+Edit
+// /sfs-socialscale/client/src/ui/pages/Dashboard.tsx
+import React from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { listPosts } from '../../lib/api';
+
+export function Dashboard() {
+  const { data } = useQuery({ queryKey: ['posts'], queryFn: listPosts });
+  return (
+    <div className="space-y-4">
+      <h2 className="text-2xl font-semibold">Overview</h2>
+      <div className="grid-auto">
+        {(data??[]).slice(0,6).map((p:any)=> (
+          <div key={p.id} className="card">
+            <div className="text-sm opacity-70">{p.status}</div>
+            <div className="font-medium mt-2 line-clamp-3">{p.body}</div>
+            <div className="text-xs opacity-60 mt-2">{p.hashtags}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+ts
+Copy
+Edit
+// /sfs-socialscale/client/src/ui/pages/Generator.tsx
+import React from 'react';
+import { useMutation } from '@tanstack/react-query';
+import { generatePosts, createPost, listAccounts } from '../../lib/api';
+
+export function Generator() {
+  const [topic, setTopic] = React.useState('Weekly product tips');
+  const [platform, setPlatform] = React.useState<'x'|'linkedin'>('x');
+  const [count, setCount] = React.useState(3);
+  const [account, setAccount] = React.useState('');
+  const [variants, setVariants] = React.useState<any[]>([]);
+
+  React.useEffect(()=>{ listAccounts().then(a=> setAccount(a?.[0]?.id||'')); },[]);
+
+  const gen = useMutation({ mutationFn: () => generatePosts({ topic, platform, count }) });
+
+  return (
+    <div className="space-y-4 max-w-3xl">
+      <h2 className="text-2xl font-semibold">Generator</h2>
+      <div className="card space-y-3">
+        <input className="input" value={topic} onChange={e=>setTopic(e.target.value)} placeholder="Topic" />
+        <div className="flex gap-2">
+          <select className="input" value={platform} onChange={e=>setPlatform(e.target.value as any)}>
+            <option value="x">X</option>
+            <option value="linkedin">LinkedIn</option>
+          </select>
+          <input className="input" type="number" value={count} onChange={e=>setCount(Number(e.target.value))} min={1} max={10} />
+          <button className="btn" onClick={()=> gen.mutate(undefined, { onSuccess: (r:any)=> setVariants(r.data||[]) })}>Generate</button>
+        </div>
+      </div>
+      <div className="grid-auto">
+        {variants.map((v,i)=> (
+          <div key={i} className="card space-y-2">
+            <div className="whitespace-pre-wrap">{v.text}</div>
+            <div className="text-xs opacity-70">{(v.hashtags||[]).join(' ')}</div>
+            <button className="btn" onClick={()=> createPost({ account_id: account, body: v.text, image_alt: v.alt_text, hashtags: v.hashtags })}>Schedule Draft</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+ts
+Copy
+Edit
+// /sfs-socialscale/client/src/ui/pages/Schedule.tsx
+import React from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { listPosts } from '../../lib/api';
+
+export function Schedule() {
+  const { data } = useQuery({ queryKey: ['posts'], queryFn: listPosts });
+  return (
+    <div className="space-y-4">
+      <h2 className="text-2xl font-semibold">Schedule</h2>
+      <table className="w-full text-sm">
+        <thead className="opacity-70"><tr><th className="text-left">Post</th><th>Status</th><th>Scheduled</th></tr></thead>
+        <tbody>
+          {(data??[]).map((p:any)=> (
+            <tr key={p.id} className="border-b border-white/10"><td className="py-3 pr-4">{p.body.slice(0,120)}</td><td>{p.status}</td><td>{p.scheduled_at||'-'}</td></tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+ts
+Copy
+Edit
+// /sfs-socialscale/client/src/ui/pages/Analytics.tsx
+import React from 'react';
+import { io } from 'socket.io-client';
+
+export function Analytics() {
+  const [events, setEvents] = React.useState<any[]>([]);
+  React.useEffect(()=>{
+    const s = io('http://localhost:8787');
+    s.on('analytics:update', (e:any)=> setEvents(prev=> [e, ...prev].slice(0,50)));
+    return ()=>{ s.close(); };
+  },[]);
+  return (
+    <div className="space-y-4">
+      <h2 className="text-2xl font-semibold">Realtime</h2>
+      <div className="grid-auto">
+        {events.map((e,i)=> (
+          <div key={i} className="card text-sm">
+            <div className="opacity-70">{e.postId}</div>
+            <div>{e.metric}: +{e.value}</div>
+            <div className="text-xs opacity-60">{e.ts}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+ts
+Copy
+Edit
+// /sfs-socialscale/client/src/ui/pages/Integrations.tsx
+import React from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { listAccounts, createAccount } from '../../lib/api';
+
+export function Integrations() {
+  const { data, refetch } = useQuery({ queryKey: ['accounts'], queryFn: listAccounts });
+  const mut = useMutation({ mutationFn: createAccount, onSuccess: () => refetch() });
+  const [handle, setHandle] = React.useState('');
+  const [platform, setPlatform] = React.useState<'x'|'linkedin'|'instagram'>('x');
+  return (
+    <div className="space-y-4 max-w-xl">
+      <h2 className="text-2xl font-semibold">Integrations</h2>
+      <div className="card space-y-2">
+        <input className="input" placeholder="@handle" value={handle} onChange={e=>setHandle(e.target.value)} />
+        <select className="input" value={platform} onChange={e=>setPlatform(e.target.value as any)}>
+          <option value="x">X</option>
+          <option value="linkedin">LinkedIn</option>
+          <option value="instagram">Instagram</option>
+        </select>
+        <button className="btn" onClick={()=> mut.mutate({ platform, handle })}>Connect (mock)</button>
+      </div>
+      <div className="grid-auto">
+        {(data??[]).map((a:any)=> (
+          <div key={a.id} className="card">
+            <div className="text-sm opacity-70">{a.platform}</div>
+            <div className="font-medium">{a.handle}</div>
+            <div className="text-xs opacity-60">{a.connected? 'Connected':'Not connected'}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+ts
+Copy
+Edit
+// /sfs-socialscale/client/src/ui/pages/Marketplace.tsx
+import React from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { listTemplates, createTemplate } from '../../lib/api';
+
+export function Marketplace() {
+  const { data, refetch } = useQuery({ queryKey: ['templates'], queryFn: listTemplates });
+  const mut = useMutation({ mutationFn: createTemplate, onSuccess: () => refetch() });
+  const [name, setName] = React.useState('Thought Leadership');
+  const [category, setCategory] = React.useState('Brand');
+  return (
+    <div className="space-y-4 max-w-xl">
+      <h2 className="text-2xl font-semibold">Templates Marketplace</h2>
+      <div className="card space-y-2">
+        <input className="input" value={name} onChange={e=>setName(e.target.value)} placeholder="Template name" />
+        <input className="input" value={category} onChange={e=>setCategory(e.target.value)} placeholder="Category" />
+        <button className="btn" onClick={()=> mut.mutate({ name, category, premium:false, body:'Write about {{topic}} for {{audience}} with CTA {{cta}}' })}>Add Template</button>
+      </div>
+      <div className="grid-auto">
+        {(data??[]).map((t:any)=> (
+          <div key={t.id} className="card">
+            <div className="text-sm opacity-70">{t.category} {t.premium? '• Premium':''}</div>
+            <div className="font-medium">{t.name}</div>
+            <pre className="text-xs opacity-70 mt-2 whitespace-pre-wrap">{t.body}</pre>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+js
+Copy
+Edit
+// /sfs-socialscale/client/postcss.config.js
+export default { plugins: { tailwindcss: {}, autoprefixer: {} } }
+js
+Copy
+Edit
+// /sfs-socialscale/client/tailwind.config.js
+/** @type {import('tailwindcss').Config} */
+export default {
+  content: ['./index.html', './src/**/*.{ts,tsx}'],
+  theme: { extend: {} },
+  plugins: [],
+}
+ADD-ON: One-domain Flask hosting + OAuth + Migration
+1) Host the new React UI under your existing Flask app (same domain)
+python
+Copy
+Edit
+# /flask_ui_bridge/spa.py
+from flask import Blueprint, send_from_directory, request, Response
+import requests, os
+
+# WHY: unify UI and API under Flask origin; avoid CORS in production.
+
+def create_spa_blueprint(app, static_folder: str, api_base: str = None):
+    api_base = api_base or os.getenv("NODE_API", "http://localhost:8787")
+
+    spa = Blueprint("spa", __name__, static_folder=static_folder, static_url_path="/app")
+
+    @spa.route("/app/")
+    @spa.route("/app/<path:path>")
+    def assets(path: str = "index.html"):
+        if not path or path.endswith("/"):
+            path = "index.html"
+        file_path = os.path.join(spa.static_folder, path)
+        if not os.path.isfile(file_path):
+            return send_from_directory(spa.static_folder, "index.html")
+        return send_from_directory(spa.static_folder, path)
+
+    proxy = Blueprint("proxy", __name__)
+
+    @proxy.route("/api/<path:path>", methods=["GET","POST","PATCH","PUT","DELETE","OPTIONS"])
+    def api_proxy(path: str):
+        url = f"{api_base.rstrip('/')}/api/{path}"
+        headers = {k:v for k,v in request.headers if k.lower() in ("content-type",) or k.lower().startswith("x-")}
+        try:
+            resp = requests.request(
+                method=request.method,
+                url=url,
+                params=request.args,
+                data=request.get_data(),
+                headers=headers,
+                timeout=30,
+            )
+            excluded = {"content-encoding", "content-length", "transfer-encoding", "connection"}
+            passthrough = [(k, v) for k, v in resp.headers.items() if k.lower() not in excluded]
+            return Response(resp.content, resp.status_code, passthrough)
+        except requests.RequestException as e:
+            return {"ok": False, "error": {"message": str(e)}}, 502
+
+    app.register_blueprint(spa)
+    app.register_blueprint(proxy)
+python
+Copy
+Edit
+# In your Flask app factory or main (e.g., app.py)
+from flask_ui_bridge.spa import create_spa_blueprint
+import os
+
+# After you create `app = Flask(__name__)`
+create_spa_blueprint(
+    app,
+    static_folder=os.path.join(os.path.dirname(__file__), "..", "sfs-socialscale", "client", "dist"),
+    api_base=os.getenv("NODE_API", "http://localhost:8787"),
+)
+bash
+Copy
+Edit
+# Build the UI once, then run Flask-only in prod
+cd sfs-socialscale/client && npm i && npm run build
+# Now run your Flask app (the UI is served at /app)
+# API proxy is /api → forwarded to Node server at NODE_API
+ts
+Copy
+Edit
+// /sfs-socialscale/client/src/lib/api.ts (switch to same-origin via Flask proxy)
+const base = (import.meta.env.VITE_API_BASE as string) || '/api';
+2) OAuth for LinkedIn + X (Twitter) — server-side (Express)
+ts
+Copy
+Edit
+// /sfs-socialscale/server/src/crypto.ts
+import crypto from 'crypto';
+const SECRET = (process.env.SECRET || 'dev-secret').padEnd(32, 'x').slice(0,32);
+export function seal(plain: string) {
+  const iv = crypto.randomBytes(12);
+  const c = crypto.createCipheriv('aes-256-gcm', Buffer.from(SECRET), iv);
+  const enc = Buffer.concat([c.update(plain, 'utf8'), c.final()]);
+  const tag = c.getAuthTag();
+  return Buffer.concat([iv, tag, enc]).toString('base64');
+}
+export function unseal(token: string) {
+  const buf = Buffer.from(token, 'base64');
+  const iv = buf.subarray(0,12);
+  const tag = buf.subarray(12,28);
+  const data = buf.subarray(28);
+  const d = crypto.createDecipheriv('aes-256-gcm', Buffer.from(SECRET), iv);
+  d.setAuthTag(tag);
+  return Buffer.concat([d.update(data), d.final()]).toString('utf8');
+}
+export function pkceVerifier() { return crypto.randomBytes(32).toString('base64url'); }
+export function pkceChallenge(v: string) { return crypto.createHash('sha256').update(v).digest('base64url'); }
+ts
+Copy
+Edit
+// /sfs-socialscale/server/src/db.ts (append token store)
+// ...existing imports & types
+export type Token = { id: string; account_id: string; provider: 'linkedin'|'x'; access_token: string; refresh_token?: string|null; expires_at?: string|null };
+// inside init(d):
+  d.exec(`
+    CREATE TABLE IF NOT EXISTS tokens (
+      id TEXT PRIMARY KEY,
+      account_id TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      access_token TEXT NOT NULL,
+      refresh_token TEXT,
+      expires_at TEXT,
+      FOREIGN KEY (account_id) REFERENCES accounts(id)
+    );
+  `);
+ts
+Copy
+Edit
+// /sfs-socialscale/server/src/oauth.ts
+import fetch from 'node-fetch';
+import { Router } from 'express';
+import { getDB } from './db.js';
+import { uuid, ok, err } from './util.js';
+import { pkceVerifier, pkceChallenge, seal } from './crypto.js';
+
+const store = new Map<string, any>(); // dev-only state store
+const BASE = (process.env.PUBLIC_SERVER_URL || `http://localhost:${process.env.PORT||8787}`) + '/api/oauth';
+
+export const oauth = Router();
+
+// start → returns {url} for browser redirect
+oauth.get('/:provider/start', (req, res) => {
+  const { provider } = req.params as { provider: 'linkedin'|'x' };
+  const handle = (req.query.handle as string)||''; // optional, used to label account
+  const state = uuid();
+  if (provider === 'linkedin') {
+    const cid = process.env.LINKEDIN_CLIENT_ID!;
+    const redirect = process.env.LINKEDIN_REDIRECT || `${BASE}/linkedin/callback`;
+    const scope = encodeURIComponent('r_liteprofile r_emailaddress w_member_social offline_access');
+    const url = `https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=${cid}&redirect_uri=${encodeURIComponent(redirect)}&state=${state}&scope=${scope}`;
+    store.set(state, { provider, handle });
+    return res.json(ok({ url }));
+  }
+  if (provider === 'x') {
+    const cid = process.env.X_CLIENT_ID!;
+    const redirect = process.env.X_REDIRECT || `${BASE}/x/callback`;
+    const verifier = pkceVerifier();
+    const challenge = pkceChallenge(verifier);
+    const scope = encodeURIComponent('tweet.read tweet.write users.read offline.access');
+    const url = `https://twitter.com/i/oauth2/authorize?response_type=code&client_id=${cid}&redirect_uri=${encodeURIComponent(redirect)}&state=${state}&scope=${scope}&code_challenge=${challenge}&code_challenge_method=S256`;
+    store.set(state, { provider, handle, verifier });
+    return res.json(ok({ url }));
+  }
+  return res.status(400).json(err('unknown provider'));
+});
+
+// callbacks → exchanges code, stores tokens, marks account connected
+oauth.get('/linkedin/callback', async (req, res) => {
+  const { code, state } = req.query as any;
+  const s = store.get(state);
+  if (!s) return res.status(400).send('Invalid state');
+  const redirect = process.env.LINKEDIN_REDIRECT || `${BASE}/linkedin/callback`;
+  const r = await fetch('https://www.linkedin.com/oauth/v2/accessToken', {
+    method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'authorization_code',
+      code, redirect_uri: redirect,
+      client_id: process.env.LINKEDIN_CLIENT_ID!,
+      client_secret: process.env.LINKEDIN_CLIENT_SECRET!,
+    } ) as any
+  });
+  const j = await r.json();
+  const access = j.access_token as string; const refresh = j.refresh_token as string|undefined; const exp = j.expires_in ? new Date(Date.now()+j.expires_in*1000).toISOString() : null;
+  const db = getDB();
+  const accountId = uuid();
+  db.prepare('INSERT INTO accounts (id, platform, handle, connected, token_hint) VALUES (?,?,?,?,?)')
+    .run(accountId, 'linkedin', s.handle || 'LinkedIn', 1, 'lnkd');
+  db.prepare('INSERT INTO tokens (id,account_id,provider,access_token,refresh_token,expires_at) VALUES (?,?,?,?,?,?)')
+    .run(uuid(), accountId, 'linkedin', seal(access), refresh? seal(refresh): null, exp);
+  store.delete(state);
+  return res.send('<script>window.close && window.close();</script> LinkedIn connected, you can close this tab.');
+});
+
+oauth.get('/x/callback', async (req, res) => {
+  const { code, state } = req.query as any;
+  const s = store.get(state);
+  if (!s) return res.status(400).send('Invalid state');
+  const redirect = process.env.X_REDIRECT || `${BASE}/x/callback`;
+  const body = new URLSearchParams({
+    grant_type: 'authorization_code', code, redirect_uri: redirect,
+    client_id: process.env.X_CLIENT_ID!, code_verifier: s.verifier,
+  });
+  const r = await fetch('https://api.twitter.com/2/oauth2/token', {
+    method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: body as any
+  });
+  const j = await r.json();
+  const access = j.access_token as string; const refresh = j.refresh_token as string|undefined; const exp = j.expires_in ? new Date(Date.now()+j.expires_in*1000).toISOString() : null;
+  const db = getDB();
+  const accountId = uuid();
+  db.prepare('INSERT INTO accounts (id, platform, handle, connected, token_hint) VALUES (?,?,?,?,?)')
+    .run(accountId, 'x', s.handle || '@twitter', 1, 'tw');
+  db.prepare('INSERT INTO tokens (id,account_id,provider,access_token,refresh_token,expires_at) VALUES (?,?,?,?,?,?)')
+    .run(uuid(), accountId, 'x', seal(access), refresh? seal(refresh): null, exp);
+  store.delete(state);
+  return res.send('<script>window.close && window.close();</script> X connected, you can close this tab.');
+});
+ts
+Copy
+Edit
+// /sfs-socialscale/server/src/index.ts (mount OAuth)
+// ...existing imports
+import { oauth } from './oauth.js';
+app.use('/api/oauth', oauth);
+env
+Copy
+Edit
+# /sfs-socialscale/.env.example (append)
+SECRET=change-me-for-token-encryption
+PUBLIC_SERVER_URL=http://localhost:8787
+
+# LinkedIn OAuth
+LINKEDIN_CLIENT_ID=
+LINKEDIN_CLIENT_SECRET=
+LINKEDIN_REDIRECT=http://localhost:8787/api/oauth/linkedin/callback
+
+# X (Twitter) OAuth 2.0 with PKCE
+X_CLIENT_ID=
+X_REDIRECT=http://localhost:8787/api/oauth/x/callback
+ts
+Copy
+Edit
+// /sfs-socialscale/client/src/ui/pages/Integrations.tsx (use real OAuth)
+import React from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { listAccounts } from '../../lib/api';
+
+export function Integrations() {
+  const { data, refetch } = useQuery({ queryKey: ['accounts'], queryFn: listAccounts });
+
+  async function connect(provider: 'linkedin'|'x', handle = '') {
+    const r = await fetch(`/api/oauth/${provider}/start?handle=${encodeURIComponent(handle)}`);
+    const j = await r.json();
+    const url = j?.data?.url; if (!url) return alert('OAuth error');
+    const w = window.open(url, '_blank', 'width=500,height=700');
+    const timer = setInterval(()=>{ if (w && w.closed) { clearInterval(timer); refetch(); } }, 800);
+  }
+
+  return (
+    <div className="space-y-4 max-w-xl">
+      <h2 className="text-2xl font-semibold">Integrations</h2>
+      <div className="card space-y-2">
+        <div className="flex gap-2">
+          <input id="handle-x" className="input" placeholder="@handle (optional)" />
+          <button className="btn" onClick={()=> connect('x', (document.getElementById('handle-x') as HTMLInputElement).value)}>Connect X</button>
+        </div>
+        <div className="flex gap-2">
+          <input id="handle-li" className="input" placeholder="Company or Name (optional)" />
+          <button className="btn" onClick={()=> connect('linkedin', (document.getElementById('handle-li') as HTMLInputElement).value)}>Connect LinkedIn</button>
+        </div>
+      </div>
+      <div className="grid-auto">
+        {(data??[]).map((a:any)=> (
+          <div key={a.id} className="card">
+            <div className="text-sm opacity-70">{a.platform}</div>
+            <div className="font-medium">{a.handle}</div>
+            <div className="text-xs opacity-60">{a.connected? 'Connected':'Not connected'}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+3) Migration CLI (import old data → new SQLite)
+ts
+Copy
+Edit
+// /sfs-socialscale/server/src/migrate.ts
+import { getDB } from './db.js';
+import Database from 'better-sqlite3';
+import fs from 'node:fs';
+import { randomUUID as uuid } from 'node:crypto';
+
+function importFromOldSqlite(path: string) {
+  const target = getDB();
+  const old = new Database(path, {});
+  const tx = target.transaction((rows: any[], table: string, mapper: (r:any)=>any) => {
+    for (const r of rows) {
+      const m = mapper(r);
+      if (table==='accounts') target.prepare('INSERT OR IGNORE INTO accounts (id,platform,handle,connected,token_hint) VALUES (?,?,?,?,?)').run(m.id, m.platform, m.handle, m.connected?1:0, m.token_hint||null);
+      if (table==='templates') target.prepare('INSERT OR IGNORE INTO templates (id,name,category,premium,body) VALUES (?,?,?,?,?)').run(m.id, m.name, m.category, m.premium?1:0, m.body);
+      if (table==='posts') target.prepare('INSERT OR IGNORE INTO posts (id,account_id,body,image_alt,hashtags,status,scheduled_at,posted_at) VALUES (?,?,?,?,?,?,?,?)').run(m.id, m.account_id, m.body, m.image_alt||null, m.hashtags||null, m.status, m.scheduled_at||null, m.posted_at||null);
+    }
+  });
+
+  // Heuristics: try common table names; override via env JSON if needed
+  const map = JSON.parse(process.env.MIGRATION_MAP || '{}');
+
+  const accounts = old.prepare(`SELECT * FROM ${map.accounts?.table || 'accounts'}`).all();
+  tx(accounts, 'accounts', (r:any)=> ({ id:r.id||uuid(), platform:r.platform||'x', handle:r.handle||'user', connected:r.connected??1, token_hint:r.token_hint||null }));
+
+  const templates = old.prepare(`SELECT * FROM ${map.templates?.table || 'templates'}`).all();
+  tx(templates, 'templates', (r:any)=> ({ id:r.id||uuid(), name:r.name, category:r.category||'General', premium:!!r.premium, body:r.body }));
+
+  const posts = old.prepare(`SELECT * FROM ${map.posts?.table || 'posts'}`).all();
+  tx(posts, 'posts', (r:any)=> ({ id:r.id||uuid(), account_id:r.account_id, body:r.body, image_alt:r.image_alt, hashtags:r.hashtags, status:r.status||'draft', scheduled_at:r.scheduled_at, posted_at:r.posted_at }));
+
+  console.log('Migration from SQLite completed.');
+}
+
+function importFromJson(path: string) {
+  const j = JSON.parse(fs.readFileSync(path, 'utf8'));
+  const db = getDB();
+  const ensure = (v:any, d:any)=> (v===undefined||v===null)?d:v;
+  for (const a of j.accounts||[]) db.prepare('INSERT OR IGNORE INTO accounts (id,platform,handle,connected,token_hint) VALUES (?,?,?,?,?)').run(ensure(a.id, uuid()), ensure(a.platform,'x'), ensure(a.handle,'user'), a.connected?1:0, a.token_hint||null);
+  for (const t of j.templates||[]) db.prepare('INSERT OR IGNORE INTO templates (id,name,category,premium,body) VALUES (?,?,?,?,?)').run(ensure(t.id, uuid()), t.name, ensure(t.category,'General'), t.premium?1:0, t.body);
+  for (const p of j.posts||[]) db.prepare('INSERT OR IGNORE INTO posts (id,account_id,body,image_alt,hashtags,status,scheduled_at,posted_at) VALUES (?,?,?,?,?,?,?,?)').run(ensure(p.id, uuid()), p.account_id, p.body, p.image_alt||null, p.hashtags||null, ensure(p.status,'draft'), p.scheduled_at||null, p.posted_at||null);
+  console.log('Migration from JSON completed.');
+}
+
+const [,,mode,arg] = process.argv;
+if (!mode || !arg) {
+  console.log('Usage: tsx src/migrate.ts sqlite /path/old.sqlite  OR  tsx src/migrate.ts json /path/export.json');
+  process.exit(1);
+}
+if (mode==='sqlite') importFromOldSqlite(arg);
+if (mode==='json') importFromJson(arg);
+json
+Copy
+Edit
+// /sfs-socialscale/server/package.json (append scripts)
+{
+  "scripts": {
+    "migrate:sqlite": "tsx src/migrate.ts sqlite ./old.sqlite",
+    "migrate:json": "tsx src/migrate.ts json ./export.json"
+  }
+}
+md
+Copy
+Edit
+# OAuth & Migration Quick Steps
+
+1. **Same-domain UI**
+   - Build UI: `npm -w client run build` → ensure Flask registers `create_spa_blueprint`.
+   - Visit `http://your-flask-host/app`.
+2. **OAuth**
+   - Create apps in LinkedIn & X developer portals; set redirect URIs from `.env`.
+   - Fill env: `LINKEDIN_CLIENT_ID/SECRET`, `X_CLIENT_ID`, `SECRET`, `PUBLIC_SERVER_URL`.
+   - Restart server; use Integrations → “Connect” buttons.
+3. **Migration**
+   - If you have an old SQLite DB: `npm -w server run migrate:sqlite -- ./path/to/old.sqlite` (or edit script arg).
+   - If you can export JSON: `npm -w server run migrate:json -- ./export.json`.
+SmartFlowSite integration pack (style + links)
+PLAN (pseudocode)
+Mirror SmartFlowSite’s brand in SFS UI: colors, fonts, spacing → update client tokens.
+
+Serve SFS UI at /app under the same Flask site (already added) → use that URL in links.
+
+Add a Projects grid tile for “SFS • AI Social Media Bot” into SmartFlowSite’s 4 project spots.
+
+Provide a scripted linker that inserts/updates the project in data/systems.json and patches index.html if needed.
+
+Minimal CSS additions to match gold-accent cards/buttons.
+
+diff
+Copy
+Edit
+# /sfs-socialscale/client/src/index.css  (brand tokens to match site)
+@@
+-:root { color-scheme: light dark; }
+-body { @apply bg-neutral-950 text-neutral-100; }
++:root { color-scheme: light dark; --bg:#0b0b0b; --text:#f5f5f5; --gold:#d4af37; --muted:#bfbfbf; }
++body { background: var(--bg); color: var(--text); }
+-.card { @apply rounded-2xl p-4 shadow-xl bg-neutral-900; }
++.card { @apply rounded-2xl p-4 shadow-xl; background: #111; border: 1px solid rgba(212,175,55,.18); }
+-.btn { @apply rounded-xl px-3 py-2 font-medium bg-white/10 hover:bg-white/20; }
++.btn { @apply rounded-xl px-3 py-2 font-medium; background: linear-gradient(180deg, rgba(212,175,55,.22), rgba(212,175,55,.08)); border: 1px solid rgba(212,175,55,.35); }
++.btn:hover { filter: brightness(1.1); }
+-.input { @apply rounded-xl px-3 py-2 bg-white/5 border border-white/10 w-full; }
++.input { @apply rounded-xl px-3 py-2 w-full; background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.12); color: var(--text); }
++.badge { display:inline-block; padding:.2rem .5rem; border:1px solid rgba(212,175,55,.4); border-radius:.6rem; color:var(--text); }
+python
+Copy
+Edit
+# /SmartFlowSite/app.py  (mount the SPA + API proxy if not already)
+from flask import Flask
+from flask_ui_bridge.spa import create_spa_blueprint
+import os
+
+app = Flask(__name__, static_folder='static', static_url_path='/static')
+
+# ... your existing routes ...
+
+# Mount SFS UI at /app with Node API target
+create_spa_blueprint(
+    app,
+    static_folder=os.path.join(os.path.dirname(__file__), 'sfs-socialscale', 'client', 'dist'),
+    api_base=os.getenv('NODE_API', 'http://localhost:8787')
+)
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=int(os.getenv('PORT', 5000)))
+js
+Copy
+Edit
+// /SmartFlowSite/scripts/link_sfs_project.js
+// WHY: programmatically add/refresh the “AI Social Media Bot” tile in the 4-slot grid.
+import fs from 'node:fs';
+import path from 'node:path';
+
+const root = path.resolve(process.cwd());
+const dataPath = path.join(root, 'data', 'systems.json');
+const indexPath = path.join(root, 'index.html');
+const url = process.env.SFS_APP_URL || '/app';
+
+function ensureSystems() {
+  let json = { systems: [] };
+  if (fs.existsSync(dataPath)) json = JSON.parse(fs.readFileSync(dataPath, 'utf8'));
+  const systems = json.systems || [];
+  const id = 'sfs-ai-social';
+  const entry = {
+    id, name: 'SFS • AI Social Media Bot',
+    summary: 'Generate, schedule, and track posts across platforms.',
+    href: url,
+    badge: 'LIVE',
+    icon: '/static-logo.png'
+  };
+  const idx = systems.findIndex((s) => s.id === id);
+  if (idx >= 0) systems[idx] = { ...systems[idx], ...entry };
+  else systems.unshift(entry);
+  json.systems = systems.slice(0, 4); // keep top 4 spots
+  fs.mkdirSync(path.dirname(dataPath), { recursive: true });
+  fs.writeFileSync(dataPath, JSON.stringify(json, null, 2));
+  console.log('Updated systems.json with', entry.name, '→', entry.href);
+}
+
+function patchIndex() {
+  if (!fs.existsSync(indexPath)) return;
+  let html = fs.readFileSync(indexPath, 'utf8');
+  if (!/id="projects-grid"/.test(html)) return; // grid already present
+  // No-op: assumes your template reads from data/systems.json.
+  fs.writeFileSync(indexPath, html);
+}
+
+ensureSystems();
+patchIndex();
+diff
+Copy
+Edit
+# /SmartFlowSite/styles.css  (tiny additions for badge/buttons if needed)
++.tile { background:#131313; border:1px solid rgba(212,175,55,.2); border-radius:16px; padding:16px; }
++.tile:hover { transform: translateY(-1px); box-shadow: 0 6px 24px rgba(0,0,0,.25); }
++.tile .title { color:#f5f5f5; font-weight:600; }
++.tile .desc { color:#bfbfbf; font-size:14px; }
++.tile .cta { display:inline-flex; align-items:center; gap:.4rem; padding:.5rem .8rem; border-radius:10px; border:1px solid rgba(212,175,55,.35); color:#f5f5f5; background:linear-gradient(180deg, rgba(212,175,55,.2), rgba(212,175,55,.08)); }
++.badge { display:inline-block; padding:.15rem .45rem; border:1px solid rgba(212,175,55,.4); border-radius:.6rem; color:#f5f5f5; font-size:12px; }
+html
+Copy
+Edit
+<!-- /SmartFlowSite/index.html (projects section snippet) -->
+<section id="projects" class="section">
+  <h2 class="section-title">SmartFlow Systems</h2>
+  <div id="projects-grid" class="grid">
+    <!-- Existing three spots here... -->
+    <!-- New: AI Social Media Bot tile (reads href=/app) -->
+    <a class="tile" href="/app">
+      <div class="badge">LIVE</div>
+      <h3 class="title">SFS • AI Social Media Bot</h3>
+      <p class="desc">Generate, schedule, and track multi-platform posts with AI.</p>
+      <div class="cta">Open App →</div>
+    </a>
+  </div>
+</section>
+bash
+Copy
+Edit
+# Usage: link project into the 4-slot grid
+cd SmartFlowSite
+node scripts/link_sfs_project.js   # SFS_APP_URL=/app by default
+# Build the React UI once and serve from Flask domain
+cd sfs-socialscale/client && npm run build
+# Start Flask
+python3 app.py
+Auto-wire 3 more SFS tiles + Live Metrics badge
+PLAN (pseudocode)
+Extend linker to accept up to 3 additional projects via CLI or JSON.
+
+Update data/systems.json → keep top 4 (order given), dedupe by id.
+
+Add dynamic Live badge on tiles: fetch /api/metrics/active and show "Active today: N".
+
+Server: add /api/metrics/active and /api/metrics/bulk (24h window, sum of analytics rows).
+
+Provide a metrics:seed script to generate demo activity.
+
+ts
+Copy
+Edit
+// /sfs-socialscale/server/src/routes.metrics.ts
+import { Router } from 'express';
+import { DateTime } from 'luxon';
+import { getDB } from './db.js';
+import { ok } from './util.js';
+
+export const metrics = Router();
+
+function sinceISO(hours = 24) {
+  return DateTime.utc().minus({ hours }).toISO();
+}
+
+metrics.get('/active', (_req, res) => {
+  const row = getDB().prepare('SELECT COUNT(*) as c FROM analytics WHERE ts >= ?').get(sinceISO(24));
+  res.json(ok({ active_today: Number(row.c || 0) }));
+});
+
+metrics.get('/bulk', (req, res) => {
+  // For now, same number for all apps; in future, join by app_id
+  const apps = String(req.query.apps || '').split(',').filter(Boolean);
+  const row = getDB().prepare('SELECT COUNT(*) as c FROM analytics WHERE ts >= ?').get(sinceISO(24));
+  const n = Number(row.c || 0);
+  const map: Record<string, number> = {};
+  for (const a of apps) map[a] = n;
+  res.json(ok({ active_today: map }));
+});
+ts
+Copy
+Edit
+// /sfs-socialscale/server/src/index.ts (mount metrics)
+import { metrics } from './routes.metrics.js';
+app.use('/api/metrics', metrics);
+jsonc
+Copy
+Edit
+// /sfs-socialscale/server/package.json (append)
+{
+  "scripts": {
+    "metrics:seed": "tsx src/seed-metrics.ts"
+  }
+}
+ts
+Copy
+Edit
+// /sfs-socialscale/server/src/seed-metrics.ts
+import { getDB } from './db.js';
+import { DateTime } from 'luxon';
+import { randomUUID } from 'node:crypto';
+
+const db = getDB();
+const now = DateTime.utc();
+for (let i=0;i<120;i++) {
+  const ts = now.minus({ minutes: Math.floor(Math.random()* (24*60)) }).toISO();
+  const post = db.prepare('SELECT id FROM posts ORDER BY RANDOM() LIMIT 1').get() as any;
+  const postId = post?.id || randomUUID();
+  db.prepare('INSERT OR IGNORE INTO posts (id,account_id,body,status) VALUES (?,?,?,?)').run(postId, 'seed', 'Seeded', 'posted');
+  db.prepare('INSERT INTO analytics (id,post_id,metric,value,ts) VALUES (?,?,?,?,?)')
+    .run(randomUUID(), postId, 'engagement', Math.floor(1+Math.random()*5), ts);
+}
+console.log('Seeded analytics events.');
+js
+Copy
+Edit
+// /SmartFlowSite/scripts/link_projects.js  (replace previous link script)
+import fs from 'node:fs'; import path from 'node:path';
+const root = path.resolve(process.cwd());
+const dataPath = path.join(root, 'data', 'systems.json');
+const urlDefault = process.env.SFS_APP_URL || '/app';
+
+function readJSON(p, fallback) { try { return JSON.parse(fs.readFileSync(p,'utf8')); } catch { return fallback; } }
+function writeJSON(p, j) { fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, JSON.stringify(j,null,2)); }
+
+// Usage:
+// node scripts/link_projects.js \
+//   '{"id":"sfs-ai-social","name":"SFS • AI Social Media Bot","href":"/app","badge":"LIVE","icon":"/static-logo.png"}' \
+//   '{"id":"sfs-proj-2","name":"SFS • Project Two","href":"/proj2","badge":"BETA"}' \
+//   '{"id":"sfs-proj-3","name":"SFS • Project Three","href":"/proj3"}'
+
+const args = process.argv.slice(2).map(a=>{ try { return JSON.parse(a); } catch { return null; } }).filter(Boolean);
+if (!args.length) args.push({ id:'sfs-ai-social', name:'SFS • AI Social Media Bot', href:urlDefault, badge:'LIVE', icon:'/static-logo.png' });
+
+const json = readJSON(dataPath, { systems: [] });
+const byId = new Map(json.systems.map(s=> [s.id, s]));
+for (const entry of args) {
+  const e = { badge:'', icon:'/static-logo.png', summary:'', ...entry };
+  byId.set(e.id, e);
+}
+// Keep only 4 spots in a deterministic order: CLI args first, then existing
+const merged = [...args.map(a=> byId.get(a.id)), ...json.systems.filter(s=> !args.find(a=> a.id===s.id))].slice(0,4);
+writeJSON(dataPath, { systems: merged });
+console.log('Updated systems.json with', merged.length, 'tiles');
+html
+Copy
+Edit
+<!-- /SmartFlowSite/partials/projects.html (or within index.html grid) -->
+<a class="tile" href="/app" data-app="sfs-ai-social">
+  <div class="badge"><span class="live">Active today: —</span></div>
+  <h3 class="title">SFS • AI Social Media Bot</h3>
+  <p class="desc">Generate, schedule, and track multi-platform posts with AI.</p>
+  <div class="cta">Open App →</div>
+</a>
+<script>
+(async function(){
+  try {
+    const el = document.querySelector('[data-app="sfs-ai-social"] .live');
+    const r = await fetch('/api/metrics/active');
+    const j = await r.json();
+    el.textContent = 'Active today: ' + (j?.data?.active_today ?? 0);
+  } catch (e) { /* ignore */ }
+})();
+</script>
+md
+Copy
+Edit
+## How to fill the 4 slots now
+
+1) **Seed metrics (optional)**
+```bash
+cd sfs-socialscale && npm -w server run metrics:seed
+Link 3 more projects (replace names/urls as needed)
+
+bash
+Copy
+Edit
+cd SmartFlowSite
+node scripts/link_projects.js \
+  '{"id":"sfs-ai-social","name":"SFS • AI Social Media Bot","href":"/app","badge":"LIVE"}' \
+  '{"id":"sfs-automation","name":"SFS • Automation Hub","href":"/automation","badge":"BETA"}' \
+  '{"id":"sfs-content","name":"SFS • Content Studio","href":"/content"}'
+Rebuild content if your site uses a build step
+
+bash
+Copy
+Edit
+node scripts/build.js || true
+Run site (Flask)
+
+bash
+Copy
+Edit
+python3 app.py
+The metrics badge is live — it reads /api/metrics/active via the Flask proxy and shows 24h activity.
+
+markdown
+Copy
+Edit
+
+---
+
+# Per-app metrics + Logos + Hover preview + Launch modal
+
+## PLAN (pseudocode)
+- Add `app_id` to `posts` and `analytics`.
+- Realtime/seed choose `app_id` from `APP_IDS` env.
+- `/api/metrics/bulk` returns per-app counts in one call.
+- Homepage tiles carry `data-app`, `data-href`, and `data-name`, include logo + preview.
+- JS fetches bulk metrics, injects `Active today` per tile, and opens a Launch modal.
+
+```diff
+# /sfs-socialscale/.env.example
++APP_IDS=sfs-ai-social,sfs-automation,sfs-content,sfs-ops
+ts
+Copy
+Edit
+// /sfs-socialscale/server/src/db.ts (append helpers + new columns)
+import Database from 'better-sqlite3';
+// ...existing exports
+
+function columnExists(d: Database.Database, table: string, column: string) {
+  const r = d.prepare(`PRAGMA table_info(${table})`).all() as any[];
+  return r.some(c => c.name === column);
+}
+
+function addColumnIfMissing(d: Database.Database, table: string, def: string) {
+  const [col] = def.trim().split(/\s+/);
+  if (!columnExists(d, table, col)) d.exec(`ALTER TABLE ${table} ADD COLUMN ${def}`);
+}
+
+function init(d: Database.Database) {
+  d.exec(`
+    PRAGMA journal_mode=WAL;
+    CREATE TABLE IF NOT EXISTS accounts (
+      id TEXT PRIMARY KEY,
+      platform TEXT NOT NULL,
+      handle TEXT NOT NULL,
+      connected INTEGER NOT NULL DEFAULT 0,
+      token_hint TEXT
+    );
+    CREATE TABLE IF NOT EXISTS templates (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      category TEXT NOT NULL,
+      premium INTEGER NOT NULL DEFAULT 0,
+      body TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS posts (
+      id TEXT PRIMARY KEY,
+      account_id TEXT NOT NULL,
+      body TEXT NOT NULL,
+      image_alt TEXT,
+      hashtags TEXT,
+      status TEXT NOT NULL,
+      scheduled_at TEXT,
+      posted_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS analytics (
+      id TEXT PRIMARY KEY,
+      post_id TEXT NOT NULL,
+      metric TEXT NOT NULL,
+      value REAL NOT NULL,
+      ts TEXT NOT NULL
+    );
+  `);
+  // New columns for per-app metrics
+  addColumnIfMissing(d, 'posts', 'app_id TEXT');
+  addColumnIfMissing(d, 'analytics', 'app_id TEXT');
+}
+export { init };
+ts
+Copy
+Edit
+// /sfs-socialscale/server/src/routes.metrics.ts (replace content)
+import { Router } from 'express';
+import { DateTime } from 'luxon';
+import { getDB } from './db.js';
+import { ok } from './util.js';
+
+export const metrics = Router();
+const sinceISO = (hours = 24) => DateTime.utc().minus({ hours }).toISO();
+
+metrics.get('/active', (_req, res) => {
+  const row = getDB().prepare('SELECT COUNT(*) as c FROM analytics WHERE ts >= ?').get(sinceISO(24));
+  res.json(ok({ active_today: Number(row.c || 0) }));
+});
+
+metrics.get('/bulk', (req, res) => {
+  const apps = String(req.query.apps || '').split(',').filter(Boolean);
+  const rows = getDB().prepare('SELECT app_id, COUNT(*) as c FROM analytics WHERE ts >= ? GROUP BY app_id').all(sinceISO(24));
+  const map: Record<string, number> = {};
+  for (const a of apps) map[a] = 0;
+  for (const r of rows) if (r.app_id && r.app_id in map) map[r.app_id] = Number(r.c || 0);
+  res.json(ok({ active_today: map }));
+});
+ts
+Copy
+Edit
+// /sfs-socialscale/server/src/realtime.ts (tag events with app_id)
+import { Server } from 'socket.io';
+import type { Server as HTTPServer } from 'http';
+import { getDB } from './db.js';
+import { DateTime } from 'luxon';
+
+const APP_IDS = (process.env.APP_IDS || 'sfs-ai-social').split(',').map(s=>s.trim()).filter(Boolean);
+const pickApp = () => APP_IDS[Math.floor(Math.random()*APP_IDS.length)];
+
+export function initRealtime(http: HTTPServer) {
+  const io = new Server(http, { cors: { origin: process.env.CLIENT_ORIGIN || '*' } });
+  setInterval(() => {
+    const db = getDB();
+    const posts = db.prepare('SELECT id, COALESCE(app_id, ?) as app_id FROM posts ORDER BY RANDOM() LIMIT 1').all(pickApp());
+    if (posts.length) {
+      const p = posts[0];
+      const ts = DateTime.utc().toISO();
+      const val = Math.floor(1 + Math.random() * 5);
+      db.prepare('INSERT INTO analytics (id,post_id,metric,value,ts,app_id) VALUES (?,?,?,?,?,?)')
+        .run(crypto.randomUUID(), p.id, 'engagement', val, ts, p.app_id || pickApp());
+      io.emit('analytics:update', { postId: p.id, metric: 'engagement', value: val, ts, app_id: p.app_id });
+    }
+  }, 4000);
+  return io;
+}
+ts
+Copy
+Edit
+// /sfs-socialscale/server/src/seed-metrics.ts (distribute across apps)
+import { getDB } from './db.js';
+import { DateTime } from 'luxon';
+import { randomUUID } from 'node:crypto';
+
+const db = getDB();
+const now = DateTime.utc();
+const APP_IDS = (process.env.APP_IDS || 'sfs-ai-social').split(',').map(s=>s.trim()).filter(Boolean);
+const pickApp = () => APP_IDS[Math.floor(Math.random()*APP_IDS.length)];
+
+for (let i=0;i<160;i++) {
+  const ts = now.minus({ minutes: Math.floor(Math.random()* (24*60)) }).toISO();
+  const app_id = pickApp();
+  const post = db.prepare('SELECT id FROM posts WHERE app_id IS ? OR app_id=? ORDER BY RANDOM() LIMIT 1').get(null, app_id) as any;
+  const postId = post?.id || randomUUID();
+  db.prepare('INSERT OR IGNORE INTO posts (id,account_id,body,status,app_id) VALUES (?,?,?,?,?)')
+    .run(postId, 'seed', `Seeded (${app_id})`, 'posted', app_id);
+  db.prepare('INSERT INTO analytics (id,post_id,metric,value,ts,app_id) VALUES (?,?,?,?,?,?)')
+    .run(randomUUID(), postId, 'engagement', Math.floor(1+Math.random()*5), ts, app_id);
+}
+console.log('Seeded analytics per app:', APP_IDS);
+js
+Copy
+Edit
+// /SmartFlowSite/styles.css (logos, preview, modal)
+.tile { position: relative; overflow: hidden; }
+.tile .logo { width: 40px; height: 40px; display:block; margin-bottom:8px; }
+.tile .preview { position:absolute; inset:auto 0 0 auto; right:-8px; bottom:-8px; width:120px; height:auto; opacity:.0; transition:opacity .25s ease; pointer-events:none; filter: drop-shadow(0 6px 14px rgba(0,0,0,.35)); }
+.tile:hover .preview { opacity:.9; }
+.modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; align-items:center; justify-content:center; z-index:1000; }
+.modal { background:#111; border:1px solid rgba(212,175,55,.35); border-radius:16px; padding:20px; width:min(520px,92vw); color:#f5f5f5; }
+.modal .actions { display:flex; gap:.5rem; justify-content:flex-end; margin-top:12px; }
+.modal .btn { display:inline-flex; align-items:center; gap:.4rem; padding:.55rem .9rem; border-radius:10px; border:1px solid rgba(212,175,55,.35); background:linear-gradient(180deg, rgba(212,175,55,.2), rgba(212,175,55,.08)); }
+html
+Copy
+Edit
+<!-- /SmartFlowSite/partials/projects.html (enhanced tile markup) -->
+<div id="projects-grid" class="grid">
+  <a class="tile" data-app="sfs-ai-social" data-name="SFS • AI Social Media Bot" data-href="/app">
+    <img class="logo" src="/static/logos/sfs-ai-social.svg" alt="AI Social" />
+    <div class="badge"><span class="live">Active today: —</span></div>
+    <h3 class="title">SFS • AI Social Media Bot</h3>
+    <p class="desc">Generate, schedule, and track multi-platform posts with AI.</p>
+    <img class="preview" src="/static/previews/sfs-ai-social.png" alt="preview" />
+    <div class="cta">Open App →</div>
+  </a>
+  <!-- Repeat for other 3 projects -->
+  <a class="tile" data-app="sfs-automation" data-name="SFS • Automation Hub" data-href="/automation">
+    <img class="logo" src="/static/logos/sfs-automation.svg" alt="Automation" />
+    <div class="badge"><span class="live">Active today: —</span></div>
+    <h3 class="title">SFS • Automation Hub</h3>
+    <p class="desc">Connect flows and orchestrate tasks.</p>
+    <img class="preview" src="/static/previews/sfs-automation.png" alt="preview" />
+    <div class="cta">Open App →</div>
+  </a>
+  <a class="tile" data-app="sfs-content" data-name="SFS • Content Studio" data-href="/content">
+    <img class="logo" src="/static/logos/sfs-content.svg" alt="Content" />
+    <div class="badge"><span class="live">Active today: —</span></div>
+    <h3 class="title">SFS • Content Studio</h3>
+    <p class="desc">Plan, write, and review content.</p>
+    <img class="preview" src="/static/previews/sfs-content.png" alt="preview" />
+    <div class="cta">Open App →</div>
+  </a>
+  <a class="tile" data-app="sfs-ops" data-name="SFS • Ops Center" data-href="/ops">
+    <img class="logo" src="/static/logos/sfs-ops.svg" alt="Ops" />
+    <div class="badge"><span class="live">Active today: —</span></div>
+    <h3 class="title">SFS • Ops Center</h3>
+    <p class="desc">Monitor runs and alerts.</p>
+    <img class="preview" src="/static/previews/sfs-ops.png" alt="preview" />
+    <div class="cta">Open App →</div>
+  </a>
+</div>
+
+<div id="launch-modal" class="modal-backdrop">
+  <div class="modal">
+    <h3 id="lm-title" class="title">Launch</h3>
+    <p id="lm-desc" class="desc">Open the selected app in a new tab.</p>
+    <div class="actions">
+      <button id="lm-cancel" class="btn">Cancel</button>
+      <a id="lm-go" class="btn" target="_blank" rel="noopener">Launch →</a>
+    </div>
+  </div>
+</div>
+
+<script>
+(async function(){
+  // Bulk metrics per app
+  const tiles = Array.from(document.querySelectorAll('#projects-grid .tile'));
+  const apps = tiles.map(t => t.dataset.app).join(',');
+  try {
+    const r = await fetch(`/api/metrics/bulk?apps=${encodeURIComponent(apps)}`);
+    const j = await r.json();
+    const map = (j && j.data && j.data.active_today) || {};
+    tiles.forEach(t => {
+      const a = t.dataset.app; const el = t.querySelector('.live');
+      if (el) el.textContent = `Active today: ${map[a] ?? 0}`;
+    });
+  } catch(e) {}
+
+  // Launch modal
+  const modal = document.getElementById('launch-modal');
+  const go = document.getElementById('lm-go');
+  const cancel = document.getElementById('lm-cancel');
+  const title = document.getElementById('lm-title');
+  const desc = document.getElementById('lm-desc');
+
+  function openModal(name, href) {
+    title.textContent = name;
+    desc.textContent = 'Open ' + name + ' in a new tab.';
+    go.setAttribute('href', href);
+    modal.style.display = 'flex';
+  }
+  f
+</script>
+Copy
+Edit
+
+
+# PLAN (pseudocode)
+- Understand current repo (Python+Flask PWA + Node wrapper) and goal (feature parity with SocialScaleBooster UI/flows; keep your own layout but better).
+- Decide integration shape:
+  - Keep your existing Python generator endpoints.
+  - Add a new **server/** (TypeScript + Express) for: scheduling, accounts, templates, analytics, websocket.
+  - Add a modern **client/** (React + Vite + Tailwind + shadcn) with a clean, responsive layout.
+  - Provide adapters so the new UI can call either the Python generator or Node AI if Python is disabled.
+- Data model (SQLite for quick start): accounts, posts, schedules, templates, analytics_events.
+- Features to include now (parity baseline):
+  1) Post generator (topics → multiple variants, hashtags, suggested image alt). Calls Python `/api/generate_posts` when available.
+  2) Scheduler (create/update/delete jobs; timezones; cron-like simple repeat).
+  3) Accounts (connect placeholders for X/Twitter, LinkedIn, Instagram; store tokens securely via env or vault; in demo, mock).
+  4) Templates/Marketplace (basic browse/install templates; premium flag placeholder).
+  5) Analytics (views/ctr/engagement; realtime demo via WS; historical persisted in SQLite).
+  6) PWA: offline shell + update prompt (client-side only; server serves static).
+- Security: CORS allowed from UI origin; env-config; simple API keys for admin; NEVER store raw secrets in DB.
+- Layout: left nav; header with org switch + create; cards; tables; toasts; dark/light.
+- Deliverables: monorepo (workspaces) with **client/** and **server/**; .env.example; scripts; seed data.
+- Migration: drop this folder into your repo root; set `PYTHON_SERVICE_URL` to your Flask server. Start both servers.
+
+---
+
+```txt
+# /sfs-socialscale/ (drop this folder into the root of SFS-AIbofs-social-media)
+# ├─ package.json
+# ├─ README.md
+# ├─ .env.example
+# ├─ client/
+# └─ server/
+```
+
+```jsonc
+// /sfs-socialscale/package.json (root workspaces)
+{
+  "name": "sfs-socialscale",
+  "private": true,
+  "workspaces": ["client", "server"],
+  "scripts": {
+    "dev": "npm -w server run dev & npm -w client run dev",
+    "build": "npm -w server run build && npm -w client run build",
+    "start": "npm -w server start"
+  }
+}
+```
+
+```env
+# /sfs-socialscale/.env.example
+# Shared
+PORT=8787
+CLIENT_ORIGIN=http://localhost:5173
+DATABASE_URL=./data.sqlite
+ADMIN_API_KEY=change-me
+# AI (choose one path)
+OPENAI_API_KEY=
+# Optional: point to your existing Python generator (preferred)
+PYTHON_SERVICE_URL=http://localhost:5000
+```
+
+```md
+<!-- /sfs-socialscale/README.md -->
+# SFS SocialScale Parity Pack
+
+## Quickstart
+```bash
+cd sfs-socialscale
+cp .env.example .env
+npm i
+npm -w server i
+npm -w client i
+npm run dev
+```
+- Server: http://localhost:8787
+- Client: http://localhost:5173
+- To use your Python generator, run your Flask app and set `PYTHON_SERVICE_URL`.
+
+## Notes
+- SQLite dev DB is created automatically.
+- Admin endpoints require `x-api-key: ADMIN_API_KEY`.
+```
+
+```jsonc
+// /sfs-socialscale/server/package.json
+{
+  "name": "sfs-server",
+  "type": "module",
+  "version": "0.1.0",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "seed": "tsx src/seed.ts"
+  },
+  "dependencies": {
+    "better-sqlite3": "^9.4.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "luxon": "^3.4.4",
+    "node-cron": "^3.0.3",
+    "socket.io": "^4.7.5",
+    "zod": "^3.23.8",
+    "node-fetch": "^3.3.2"
+  },
+  "devDependencies": {
+    "tsx": "^4.7.0",
+    "typescript": "^5.5.4"
+  }
+}
+```
+
+```jsonc
+// /sfs-socialscale/server/tsconfig.json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "outDir": "dist",
+    "rootDir": "src",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true
+  },
+  "include": ["src/**/*"]
+}
+```
+
+```ts
+// /sfs-socialscale/server/src/db.ts
+import Database from 'better-sqlite3';
+
+export type Account = { id: string; platform: 'x'|'linkedin'|'instagram'; handle: string; connected: number; token_hint?: string|null };
+export type Template = { id: string; name: string; category: string; premium: number; body: string };
+export type Post = { id: string; account_id: string; body: string; image_alt?: string|null; hashtags?: string|null; status: 'draft'|'scheduled'|'posted'|'failed'; scheduled_at?: string|null; posted_at?: string|null };
+export type Analytics = { id: string; post_id: string; metric: string; value: number; ts: string };
+
+let db: Database.Database | null = null;
+export function getDB() {
+  if (!db) {
+    const url = process.env.DATABASE_URL || './data.sqlite';
+    db = new Database(url);
+    init(db);
+  }
+  return db!;
+}
+
+function init(d: Database.Database) {
+  d.exec(`
+    PRAGMA journal_mode=WAL;
+    CREATE TABLE IF NOT EXISTS accounts (
+      id TEXT PRIMARY KEY,
+      platform TEXT NOT NULL,
+      handle TEXT NOT NULL,
+      connected INTEGER NOT NULL DEFAULT 0,
+      token_hint TEXT
+    );
+    CREATE TABLE IF NOT EXISTS templates (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      category TEXT NOT NULL,
+      premium INTEGER NOT NULL DEFAULT 0,
+      body TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS posts (
+      id TEXT PRIMARY KEY,
+      account_id TEXT NOT NULL,
+      body TEXT NOT NULL,
+      image_alt TEXT,
+      hashtags TEXT,
+      status TEXT NOT NULL,
+      scheduled_at TEXT,
+      posted_at TEXT,
+      FOREIGN KEY (account_id) REFERENCES accounts(id)
+    );
+    CREATE TABLE IF NOT EXISTS analytics (
+      id TEXT PRIMARY KEY,
+      post_id TEXT NOT NULL,
+      metric TEXT NOT NULL,
+      value REAL NOT NULL,
+      ts TEXT NOT NULL,
+      FOREIGN KEY (post_id) REFERENCES posts(id)
+    );
+  `);
+}
+```
+
+```ts
+// /sfs-socialscale/server/src/util.ts
+import { randomUUID } from 'node:crypto';
+export const uuid = () => randomUUID();
+export const ok = <T>(data: T) => ({ ok: true, data });
+export const err = (message: string, code = 400) => ({ ok: false, error: { message, code } });
+export const requireKey = (key?: string, header?: string) => key && header && key === header;
+```
+
+```ts
+// /sfs-socialscale/server/src/adapters/python.ts
+// Proxies to your existing Python generator if configured
+import fetch from 'node-fetch';
+
+export async function generateViaPython(input: {
+  topic: string; platform: 'x'|'linkedin'; count: number;
+}): Promise<any> {
+  const base = process.env.PYTHON_SERVICE_URL;
+  if (!base) throw new Error('PYTHON_SERVICE_URL not set');
+  const res = await fetch(`${base.replace(/\/$/, '')}/api/generate_posts`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw new Error(`Python service ${res.status}`);
+  return res.json();
+}
+```
+
+```ts
+// /sfs-socialscale/server/src/ai.ts
+// Fallback AI generator if Python is not running (uses OpenAI when available)
+import fetch from 'node-fetch';
+
+export async function generatePostsFallback({ topic, platform, count }: { topic: string; platform: 'x'|'linkedin'; count: number; }) {
+  const apiKey = process.env.OPENAI_API_KEY;
+  const items = [] as Array<{ text: string; alt_text: string; hashtags: string[] }>;
+  for (let i = 0; i < count; i++) {
+    if (!apiKey) {
+      items.push({
+        text: `${platform.toUpperCase()} post about ${topic} (${i+1})`,
+        alt_text: `Illustration about ${topic}`,
+        hashtags: ['#ai', '#social']
+      });
+      continue;
+    }
+    const prompt = `Write a ${platform==='x'?'concise tweet <=280 chars':'LinkedIn post ~2-3 sentences'} about: ${topic}. Provide 1 line of hashtags.`;
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'authorization': `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.7
+      })
+    });
+    const j = await res.json();
+    const content: string = j.choices?.[0]?.message?.content ?? '';
+    const [text, hashLine=''] = content.split('\n').map(s=>s.trim());
+    const hashtags = hashLine.split(/\s+/).filter(Boolean);
+    items.push({ text, alt_text: `Alt for ${topic}`, hashtags });
+  }
+  return { ok: true, data: items };
+}
+```
+
+```ts
+// /sfs-socialscale/server/src/routes.ts
+import { Router } from 'express';
+import { DateTime } from 'luxon';
+import { getDB } from './db.js';
+import { uuid, ok, err } from './util.js';
+import { generateViaPython } from './adapters/python.js';
+import { generatePostsFallback } from './ai.js';
+
+export const api = Router();
+
+// Health
+api.get('/health', (_req, res) => res.json(ok({ status: 'up' })));
+
+// Accounts (mock connect)
+api.get('/accounts', (req, res) => {
+  const rows = getDB().prepare('SELECT * FROM accounts').all();
+  res.json(ok(rows));
+});
+api.post('/accounts', (req, res) => {
+  const { platform, handle, token_hint } = req.body ?? {};
+  if (!platform || !handle) return res.status(400).json(err('platform+handle required'));
+  const id = uuid();
+  getDB().prepare('INSERT INTO accounts (id, platform, handle, connected, token_hint) VALUES (?,?,?,?,?)')
+    .run(id, platform, handle, 1, token_hint ?? null);
+  res.json(ok({ id }));
+});
+
+// Templates
+api.get('/templates', (_req, res) => {
+  const rows = getDB().prepare('SELECT * FROM templates').all();
+  res.json(ok(rows));
+});
+api.post('/templates', (req, res) => {
+  const { name, category, premium, body } = req.body ?? {};
+  const id = uuid();
+  getDB().prepare('INSERT INTO templates (id,name,category,premium,body) VALUES (?,?,?,?,?)')
+    .run(id, name, category, premium?1:0, body);
+  res.json(ok({ id }));
+});
+
+// Generator → Python or fallback
+api.post('/generate_posts', async (req, res) => {
+  const { topic, platform='x', count=3 } = req.body ?? {};
+  try {
+    const result = process.env.PYTHON_SERVICE_URL
+      ? await generateViaPython({ topic, platform, count })
+      : await generatePostsFallback({ topic, platform, count });
+    res.json(result);
+  } catch (e: any) {
+    res.status(500).json(err(e.message));
+  }
+});
+
+// Posts + scheduling
+api.get('/posts', (_req, res) => {
+  const rows = getDB().prepare('SELECT * FROM posts ORDER BY COALESCE(scheduled_at, posted_at) DESC').all();
+  res.json(ok(rows));
+});
+api.post('/posts', (req, res) => {
+  const { account_id, body, image_alt, hashtags, scheduled_at } = req.body ?? {};
+  if (!account_id || !body) return res.status(400).json(err('account_id+body required'));
+  const id = uuid();
+  getDB().prepare('INSERT INTO posts (id,account_id,body,image_alt,hashtags,status,scheduled_at) VALUES (?,?,?,?,?,?,?)')
+    .run(id, account_id, body, image_alt ?? null, (hashtags??[]).join(' '), scheduled_at ?? null, scheduled_at? 'scheduled':'draft');
+  res.json(ok({ id }));
+});
+api.patch('/posts/:id', (req, res) => {
+  const { id } = req.params;
+  const { status, scheduled_at } = req.body ?? {};
+  getDB().prepare('UPDATE posts SET status=?, scheduled_at=? WHERE id=?').run(status, scheduled_at ?? null, id);
+  res.json(ok({ id }));
+});
+
+// Analytics (basic)
+api.get('/analytics/:postId', (req, res) => {
+  const { postId } = req.params;
+  const rows = getDB().prepare('SELECT metric,value,ts FROM analytics WHERE post_id=? ORDER BY ts').all(postId);
+  res.json(ok(rows));
+});
+
+// Admin: seed demo data
+api.post('/admin/seed', (req, res) => {
+  const key = req.header('x-api-key');
+  if (!process.env.ADMIN_API_KEY || key !== process.env.ADMIN_API_KEY) return res.status(401).json(err('unauthorized', 401));
+  const a1 = uuid(); const a2 = uuid();
+  const db = getDB();
+  db.prepare('INSERT OR IGNORE INTO accounts (id,platform,handle,connected) VALUES (?,?,?,1)')
+    .run(a1, 'x', '@smartflow');
+  db.prepare('INSERT OR IGNORE INTO accounts (id,platform,handle,connected) VALUES (?,?,?,1)')
+    .run(a2, 'linkedin', 'SmartFlow');
+  db.prepare('INSERT OR IGNORE INTO templates (id,name,category,premium,body) VALUES (?,?,?,?,?)')
+    .run(uuid(), 'Product Launch', 'Marketing', 0, 'Announce our new {{product}} with benefits {{benefits}}');
+  res.json(ok({ done: true }));
+});
+```
+
+```ts
+// /sfs-socialscale/server/src/realtime.ts
+import { Server } from 'socket.io';
+import type { Server as HTTPServer } from 'http';
+import { getDB } from './db.js';
+import { DateTime } from 'luxon';
+
+export function initRealtime(http: HTTPServer) {
+  const io = new Server(http, { cors: { origin: process.env.CLIENT_ORIGIN || '*' } });
+  setInterval(() => {
+    // Demo: emit random engagement events
+    const db = getDB();
+    const posts = db.prepare('SELECT id FROM posts WHERE status IN ("posted","scheduled") ORDER BY RANDOM() LIMIT 1').all();
+    if (posts.length) {
+      const postId = posts[0].id;
+      const value = Math.floor(1 + Math.random() * 5);
+      const ts = DateTime.utc().toISO();
+      db.prepare('INSERT INTO analytics (id,post_id,metric,value,ts) VALUES (?,?,?,?,?)')
+        .run(crypto.randomUUID(), postId, 'engagement', value, ts);
+      io.emit('analytics:update', { postId, metric: 'engagement', value, ts });
+    }
+  }, 4000);
+  return io;
+}
+```
+
+```ts
+// /sfs-socialscale/server/src/index.ts
+import 'dotenv/config';
+import express from 'express';
+import cors from 'cors';
+import http from 'http';
+import { api } from './routes.js';
+import { initRealtime } from './realtime.js';
+
+const app = express();
+app.use(express.json({ limit: '1mb' }));
+app.use(cors({ origin: process.env.CLIENT_ORIGIN || '*' }));
+
+app.use('/api', api);
+
+const server = http.createServer(app);
+initRealtime(server);
+
+const port = Number(process.env.PORT || 8787);
+server.listen(port, () => console.log(`[server] listening on :${port}`));
+```
+
+```ts
+// /sfs-socialscale/server/src/seed.ts
+import { getDB } from './db.js';
+import { randomUUID } from 'node:crypto';
+
+const db = getDB();
+const a = randomUUID();
+db.prepare('INSERT INTO accounts (id,platform,handle,connected) VALUES (?,?,?,1)').run(a, 'x', '@demo');
+console.log('Seeded account', a);
+```
+
+```jsonc
+// /sfs-socialscale/client/package.json
+{
+  "name": "sfs-client",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.50.0",
+    "axios": "^1.7.3",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "socket.io-client": "^4.7.5"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.74",
+    "@types/react-dom": "^18.2.24",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.41",
+    "tailwindcss": "^3.4.10",
+    "typescript": "^5.5.4",
+    "vite": "^5.4.3"
+  }
+}
+```
+
+```ts
+// /sfs-socialscale/client/vite.config.ts
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+export default defineConfig({ plugins: [react()], server: { port: 5173 } });
+```
+
+```jsonc
+// /sfs-socialscale/client/tsconfig.json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "jsx": "react-jsx",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "types": ["vite/client"]
+  },
+  "include": ["src"]
+}
+```
+
+```html
+<!-- /sfs-socialscale/client/index.html -->
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <title>SFS • Dashboard</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+```
+
+```json
+// /sfs-socialscale/client/public/manifest.webmanifest
+{
+  "name": "SFS Social",
+  "short_name": "SFS",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0b0b0b",
+  "theme_color": "#0b0b0b",
+  "icons": []
+}
+```
+
+```css
+/* /sfs-socialscale/client/src/index.css */
+@tailwind base; @tailwind components; @tailwind utilities;
+:root { color-scheme: light dark; }
+body { @apply bg-neutral-950 text-neutral-100; }
+.card { @apply rounded-2xl p-4 shadow-xl bg-neutral-900; }
+.btn { @apply rounded-xl px-3 py-2 font-medium bg-white/10 hover:bg-white/20; }
+.input { @apply rounded-xl px-3 py-2 bg-white/5 border border-white/10 w-full; }
+.grid-auto { display: grid; grid-template-columns: repeat(auto-fill,minmax(280px,1fr)); gap: 1rem; }
+```
+
+```ts
+// /sfs-socialscale/client/src/lib/api.ts
+import axios from 'axios';
+const base = import.meta.env.VITE_API_BASE || 'http://localhost:8787/api';
+export const api = axios.create({ baseURL: base });
+export const listAccounts = () => api.get('/accounts').then(r=>r.data.data);
+export const createAccount = (input: any) => api.post('/accounts', input).then(r=>r.data.data);
+export const listTemplates = () => api.get('/templates').then(r=>r.data.data);
+export const createTemplate = (input: any) => api.post('/templates', input).then(r=>r.data.data);
+export const generatePosts = (input: any) => api.post('/generate_posts', input).then(r=>r.data);
+export const listPosts = () => api.get('/posts').then(r=>r.data.data);
+export const createPost = (input: any) => api.post('/posts', input).then(r=>r.data.data);
+export const analyticsFor = (postId: string) => api.get(`/analytics/${postId}`).then(r=>r.data.data);
+```
+
+```ts
+// /sfs-socialscale/client/src/main.tsx
+import React from 'react';
+import { createRoot } from 'react-dom/client';
+import './index.css';
+import { App } from './ui/App';
+
+createRoot(document.getElementById('root')!).render(<App />);
+```
+
+```ts
+// /sfs-socialscale/client/src/ui/App.tsx
+import React from 'react';
+import { Dashboard } from './pages/Dashboard';
+import { Generator } from './pages/Generator';
+import { Schedule } from './pages/Schedule';
+import { Analytics } from './pages/Analytics';
+import { Integrations } from './pages/Integrations';
+import { Marketplace } from './pages/Marketplace';
+
+function useRoute() {
+  const [route, set] = React.useState(location.hash.slice(1)||'dashboard');
+  React.useEffect(()=>{ const on=()=>set(location.hash.slice(1)||'dashboard'); window.addEventListener('hashchange', on); return ()=>window.removeEventListener('hashchange', on); },[]);
+  return route;
+}
+
+export function App() {
+  const route = useRoute();
+  return (
+    <div className="min-h-screen grid grid-cols-[260px_1fr]">
+      <aside className="p-4 border-r border-white/10">
+        <h1 className="text-xl font-bold mb-4">SFS</h1>
+        <nav className="space-y-1">
+          {['dashboard','generator','schedule','analytics','integrations','marketplace'].map(k=> (
+            <a key={k} href={`#${k}`} className="block btn w-full text-left capitalize">{k}</a>
+          ))}
+        </nav>
+      </aside>
+      <main className="p-6 space-y-6">
+        {route==='dashboard' && <Dashboard/>}
+        {route==='generator' && <Generator/>}
+        {route==='schedule' && <Schedule/>}
+        {route==='analytics' && <Analytics/>}
+        {route==='integrations' && <Integrations/>}
+        {route==='marketplace' && <Marketplace/>}
+      </main>
+    </div>
+  );
+}
+```
+
+```ts
+// /sfs-socialscale/client/src/ui/pages/Dashboard.tsx
+import React from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { listPosts } from '../../lib/api';
+
+export function Dashboard() {
+  const { data } = useQuery({ queryKey: ['posts'], queryFn: listPosts });
+  return (
+    <div className="space-y-4">
+      <h2 className="text-2xl font-semibold">Overview</h2>
+      <div className="grid-auto">
+        {(data??[]).slice(0,6).map((p:any)=> (
+          <div key={p.id} className="card">
+            <div className="text-sm opacity-70">{p.status}</div>
+            <div className="font-medium mt-2 line-clamp-3">{p.body}</div>
+            <div className="text-xs opacity-60 mt-2">{p.hashtags}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+```ts
+// /sfs-socialscale/client/src/ui/pages/Generator.tsx
+import React from 'react';
+import { useMutation } from '@tanstack/react-query';
+import { generatePosts, createPost, listAccounts } from '../../lib/api';
+
+export function Generator() {
+  const [topic, setTopic] = React.useState('Weekly product tips');
+  const [platform, setPlatform] = React.useState<'x'|'linkedin'>('x');
+  const [count, setCount] = React.useState(3);
+  const [account, setAccount] = React.useState('');
+  const [variants, setVariants] = React.useState<any[]>([]);
+
+  React.useEffect(()=>{ listAccounts().then(a=> setAccount(a?.[0]?.id||'')); },[]);
+
+  const gen = useMutation({ mutationFn: () => generatePosts({ topic, platform, count }) });
+
+  return (
+    <div className="space-y-4 max-w-3xl">
+      <h2 className="text-2xl font-semibold">Generator</h2>
+      <div className="card space-y-3">
+        <input className="input" value={topic} onChange={e=>setTopic(e.target.value)} placeholder="Topic" />
+        <div className="flex gap-2">
+          <select className="input" value={platform} onChange={e=>setPlatform(e.target.value as any)}>
+            <option value="x">X</option>
+            <option value="linkedin">LinkedIn</option>
+          </select>
+          <input className="input" type="number" value={count} onChange={e=>setCount(Number(e.target.value))} min={1} max={10} />
+          <button className="btn" onClick={()=> gen.mutate(undefined, { onSuccess: (r:any)=> setVariants(r.data||[]) })}>Generate</button>
+        </div>
+      </div>
+      <div className="grid-auto">
+        {variants.map((v,i)=> (
+          <div key={i} className="card space-y-2">
+            <div className="whitespace-pre-wrap">{v.text}</div>
+            <div className="text-xs opacity-70">{(v.hashtags||[]).join(' ')}</div>
+            <button className="btn" onClick={()=> createPost({ account_id: account, body: v.text, image_alt: v.alt_text, hashtags: v.hashtags })}>Schedule Draft</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+```ts
+// /sfs-socialscale/client/src/ui/pages/Schedule.tsx
+import React from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { listPosts } from '../../lib/api';
+
+export function Schedule() {
+  const { data } = useQuery({ queryKey: ['posts'], queryFn: listPosts });
+  return (
+    <div className="space-y-4">
+      <h2 className="text-2xl font-semibold">Schedule</h2>
+      <table className="w-full text-sm">
+        <thead className="opacity-70"><tr><th className="text-left">Post</th><th>Status</th><th>Scheduled</th></tr></thead>
+        <tbody>
+          {(data??[]).map((p:any)=> (
+            <tr key={p.id} className="border-b border-white/10"><td className="py-3 pr-4">{p.body.slice(0,120)}</td><td>{p.status}</td><td>{p.scheduled_at||'-'}</td></tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+```
+
+```ts
+// /sfs-socialscale/client/src/ui/pages/Analytics.tsx
+import React from 'react';
+import { io } from 'socket.io-client';
+
+export function Analytics() {
+  const [events, setEvents] = React.useState<any[]>([]);
+  React.useEffect(()=>{
+    const s = io('http://localhost:8787');
+    s.on('analytics:update', (e:any)=> setEvents(prev=> [e, ...prev].slice(0,50)));
+    return ()=>{ s.close(); };
+  },[]);
+  return (
+    <div className="space-y-4">
+      <h2 className="text-2xl font-semibold">Realtime</h2>
+      <div className="grid-auto">
+        {events.map((e,i)=> (
+          <div key={i} className="card text-sm">
+            <div className="opacity-70">{e.postId}</div>
+            <div>{e.metric}: +{e.value}</div>
+            <div className="text-xs opacity-60">{e.ts}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+```ts
+// /sfs-socialscale/client/src/ui/pages/Integrations.tsx
+import React from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { listAccounts, createAccount } from '../../lib/api';
+
+export function Integrations() {
+  const { data, refetch } = useQuery({ queryKey: ['accounts'], queryFn: listAccounts });
+  const mut = useMutation({ mutationFn: createAccount, onSuccess: () => refetch() });
+  const [handle, setHandle] = React.useState('');
+  const [platform, setPlatform] = React.useState<'x'|'linkedin'|'instagram'>('x');
+  return (
+    <div className="space-y-4 max-w-xl">
+      <h2 className="text-2xl font-semibold">Integrations</h2>
+      <div className="card space-y-2">
+        <input className="input" placeholder="@handle" value={handle} onChange={e=>setHandle(e.target.value)} />
+        <select className="input" value={platform} onChange={e=>setPlatform(e.target.value as any)}>
+          <option value="x">X</option>
+          <option value="linkedin">LinkedIn</option>
+          <option value="instagram">Instagram</option>
+        </select>
+        <button className="btn" onClick={()=> mut.mutate({ platform, handle })}>Connect (mock)</button>
+      </div>
+      <div className="grid-auto">
+        {(data??[]).map((a:any)=> (
+          <div key={a.id} className="card">
+            <div className="text-sm opacity-70">{a.platform}</div>
+            <div className="font-medium">{a.handle}</div>
+            <div className="text-xs opacity-60">{a.connected? 'Connected':'Not connected'}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+```ts
+// /sfs-socialscale/client/src/ui/pages/Marketplace.tsx
+import React from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { listTemplates, createTemplate } from '../../lib/api';
+
+export function Marketplace() {
+  const { data, refetch } = useQuery({ queryKey: ['templates'], queryFn: listTemplates });
+  const mut = useMutation({ mutationFn: createTemplate, onSuccess: () => refetch() });
+  const [name, setName] = React.useState('Thought Leadership');
+  const [category, setCategory] = React.useState('Brand');
+  return (
+    <div className="space-y-4 max-w-xl">
+      <h2 className="text-2xl font-semibold">Templates Marketplace</h2>
+      <div className="card space-y-2">
+        <input className="input" value={name} onChange={e=>setName(e.target.value)} placeholder="Template name" />
+        <input className="input" value={category} onChange={e=>setCategory(e.target.value)} placeholder="Category" />
+        <button className="btn" onClick={()=> mut.mutate({ name, category, premium:false, body:'Write about {{topic}} for {{audience}} with CTA {{cta}}' })}>Add Template</button>
+      </div>
+      <div className="grid-auto">
+        {(data??[]).map((t:any)=> (
+          <div key={t.id} className="card">
+            <div className="text-sm opacity-70">{t.category} {t.premium? '• Premium':''}</div>
+            <div className="font-medium">{t.name}</div>
+            <pre className="text-xs opacity-70 mt-2 whitespace-pre-wrap">{t.body}</pre>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+```js
+// /sfs-socialscale/client/postcss.config.js
+export default { plugins: { tailwindcss: {}, autoprefixer: {} } }
+```
+
+```js
+// /sfs-socialscale/client/tailwind.config.js
+/** @type {import('tailwindcss').Config} */
+export default {
+  content: ['./index.html', './src/**/*.{ts,tsx}'],
+  theme: { extend: {} },
+  plugins: [],
+}
+```
+
+---
+
+# ADD-ON: One-domain Flask hosting + OAuth + Migration
+
+## 1) Host the new React UI under your existing Flask app (same domain)
+```python
+# /flask_ui_bridge/spa.py
+from flask import Blueprint, send_from_directory, request, Response
+import requests, os
+
+# WHY: unify UI and API under Flask origin; avoid CORS in production.
+
+def create_spa_blueprint(app, static_folder: str, api_base: str = None):
+    api_base = api_base or os.getenv("NODE_API", "http://localhost:8787")
+
+    spa = Blueprint("spa", __name__, static_folder=static_folder, static_url_path="/app")
+
+    @spa.route("/app/")
+    @spa.route("/app/<path:path>")
+    def assets(path: str = "index.html"):
+        if not path or path.endswith("/"):
+            path = "index.html"
+        file_path = os.path.join(spa.static_folder, path)
+        if not os.path.isfile(file_path):
+            return send_from_directory(spa.static_folder, "index.html")
+        return send_from_directory(spa.static_folder, path)
+
+    proxy = Blueprint("proxy", __name__)
+
+    @proxy.route("/api/<path:path>", methods=["GET","POST","PATCH","PUT","DELETE","OPTIONS"])
+    def api_proxy(path: str):
+        url = f"{api_base.rstrip('/')}/api/{path}"
+        headers = {k:v for k,v in request.headers if k.lower() in ("content-type",) or k.lower().startswith("x-")}
+        try:
+            resp = requests.request(
+                method=request.method,
+                url=url,
+                params=request.args,
+                data=request.get_data(),
+                headers=headers,
+                timeout=30,
+            )
+            excluded = {"content-encoding", "content-length", "transfer-encoding", "connection"}
+            passthrough = [(k, v) for k, v in resp.headers.items() if k.lower() not in excluded]
+            return Response(resp.content, resp.status_code, passthrough)
+        except requests.RequestException as e:
+            return {"ok": False, "error": {"message": str(e)}}, 502
+
+    app.register_blueprint(spa)
+    app.register_blueprint(proxy)
+```
+
+```python
+# In your Flask app factory or main (e.g., app.py)
+from flask_ui_bridge.spa import create_spa_blueprint
+import os
+
+# After you create `app = Flask(__name__)`
+create_spa_blueprint(
+    app,
+    static_folder=os.path.join(os.path.dirname(__file__), "..", "sfs-socialscale", "client", "dist"),
+    api_base=os.getenv("NODE_API", "http://localhost:8787"),
+)
+```
+
+```bash
+# Build the UI once, then run Flask-only in prod
+cd sfs-socialscale/client && npm i && npm run build
+# Now run your Flask app (the UI is served at /app)
+# API proxy is /api → forwarded to Node server at NODE_API
+```
+
+```ts
+// /sfs-socialscale/client/src/lib/api.ts (switch to same-origin via Flask proxy)
+const base = (import.meta.env.VITE_API_BASE as string) || '/api';
+```
+
+## 2) OAuth for LinkedIn + X (Twitter) — server-side (Express)
+```ts
+// /sfs-socialscale/server/src/crypto.ts
+import crypto from 'crypto';
+const SECRET = (process.env.SECRET || 'dev-secret').padEnd(32, 'x').slice(0,32);
+export function seal(plain: string) {
+  const iv = crypto.randomBytes(12);
+  const c = crypto.createCipheriv('aes-256-gcm', Buffer.from(SECRET), iv);
+  const enc = Buffer.concat([c.update(plain, 'utf8'), c.final()]);
+  const tag = c.getAuthTag();
+  return Buffer.concat([iv, tag, enc]).toString('base64');
+}
+export function unseal(token: string) {
+  const buf = Buffer.from(token, 'base64');
+  const iv = buf.subarray(0,12);
+  const tag = buf.subarray(12,28);
+  const data = buf.subarray(28);
+  const d = crypto.createDecipheriv('aes-256-gcm', Buffer.from(SECRET), iv);
+  d.setAuthTag(tag);
+  return Buffer.concat([d.update(data), d.final()]).toString('utf8');
+}
+export function pkceVerifier() { return crypto.randomBytes(32).toString('base64url'); }
+export function pkceChallenge(v: string) { return crypto.createHash('sha256').update(v).digest('base64url'); }
+```
+
+```ts
+// /sfs-socialscale/server/src/db.ts (append token store)
+// ...existing imports & types
+export type Token = { id: string; account_id: string; provider: 'linkedin'|'x'; access_token: string; refresh_token?: string|null; expires_at?: string|null };
+// inside init(d):
+  d.exec(`
+    CREATE TABLE IF NOT EXISTS tokens (
+      id TEXT PRIMARY KEY,
+      account_id TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      access_token TEXT NOT NULL,
+      refresh_token TEXT,
+      expires_at TEXT,
+      FOREIGN KEY (account_id) REFERENCES accounts(id)
+    );
+  `);
+```
+
+```ts
+// /sfs-socialscale/server/src/oauth.ts
+import fetch from 'node-fetch';
+import { Router } from 'express';
+import { getDB } from './db.js';
+import { uuid, ok, err } from './util.js';
+import { pkceVerifier, pkceChallenge, seal } from './crypto.js';
+
+const store = new Map<string, any>(); // dev-only state store
+const BASE = (process.env.PUBLIC_SERVER_URL || `http://localhost:${process.env.PORT||8787}`) + '/api/oauth';
+
+export const oauth = Router();
+
+// start → returns {url} for browser redirect
+oauth.get('/:provider/start', (req, res) => {
+  const { provider } = req.params as { provider: 'linkedin'|'x' };
+  const handle = (req.query.handle as string)||''; // optional, used to label account
+  const state = uuid();
+  if (provider === 'linkedin') {
+    const cid = process.env.LINKEDIN_CLIENT_ID!;
+    const redirect = process.env.LINKEDIN_REDIRECT || `${BASE}/linkedin/callback`;
+    const scope = encodeURIComponent('r_liteprofile r_emailaddress w_member_social offline_access');
+    const url = `https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=${cid}&redirect_uri=${encodeURIComponent(redirect)}&state=${state}&scope=${scope}`;
+    store.set(state, { provider, handle });
+    return res.json(ok({ url }));
+  }
+  if (provider === 'x') {
+    const cid = process.env.X_CLIENT_ID!;
+    const redirect = process.env.X_REDIRECT || `${BASE}/x/callback`;
+    const verifier = pkceVerifier();
+    const challenge = pkceChallenge(verifier);
+    const scope = encodeURIComponent('tweet.read tweet.write users.read offline.access');
+    const url = `https://twitter.com/i/oauth2/authorize?response_type=code&client_id=${cid}&redirect_uri=${encodeURIComponent(redirect)}&state=${state}&scope=${scope}&code_challenge=${challenge}&code_challenge_method=S256`;
+    store.set(state, { provider, handle, verifier });
+    return res.json(ok({ url }));
+  }
+  return res.status(400).json(err('unknown provider'));
+});
+
+// callbacks → exchanges code, stores tokens, marks account connected
+oauth.get('/linkedin/callback', async (req, res) => {
+  const { code, state } = req.query as any;
+  const s = store.get(state);
+  if (!s) return res.status(400).send('Invalid state');
+  const redirect = process.env.LINKEDIN_REDIRECT || `${BASE}/linkedin/callback`;
+  const r = await fetch('https://www.linkedin.com/oauth/v2/accessToken', {
+    method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'authorization_code',
+      code, redirect_uri: redirect,
+      client_id: process.env.LINKEDIN_CLIENT_ID!,
+      client_secret: process.env.LINKEDIN_CLIENT_SECRET!,
+    }) as any
+  });
+  const j = await r.json();
+  const access = j.access_token as string; const refresh = j.refresh_token as string|undefined; const exp = j.expires_in ? new Date(Date.now()+j.expires_in*1000).toISOString() : null;
+  const db = getDB();
+  const accountId = uuid();
+  db.prepare('INSERT INTO accounts (id, platform, handle, connected, token_hint) VALUES (?,?,?,?,?)')
+    .run(accountId, 'linkedin', s.handle || 'LinkedIn', 1, 'lnkd');
+  db.prepare('INSERT INTO tokens (id,account_id,provider,access_token,refresh_token,expires_at) VALUES (?,?,?,?,?,?)')
+    .run(uuid(), accountId, 'linkedin', seal(access), refresh? seal(refresh): null, exp);
+  store.delete(state);
+  return res.send('<script>window.close && window.close();</script> LinkedIn connected, you can close this tab.');
+});
+
+oauth.get('/x/callback', async (req, res) => {
+  const { code, state } = req.query as any;
+  const s = store.get(state);
+  if (!s) return res.status(400).send('Invalid state');
+  const redirect = process.env.X_REDIRECT || `${BASE}/x/callback`;
+  const body = new URLSearchParams({
+    grant_type: 'authorization_code', code, redirect_uri: redirect,
+    client_id: process.env.X_CLIENT_ID!, code_verifier: s.verifier,
+  });
+  const r = await fetch('https://api.twitter.com/2/oauth2/token', {
+    method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: body as any
+  });
+  const j = await r.json();
+  const access = j.access_token as string; const refresh = j.refresh_token as string|undefined; const exp = j.expires_in ? new Date(Date.now()+j.expires_in*1000).toISOString() : null;
+  const db = getDB();
+  const accountId = uuid();
+  db.prepare('INSERT INTO accounts (id, platform, handle, connected, token_hint) VALUES (?,?,?,?,?)')
+    .run(accountId, 'x', s.handle || '@twitter', 1, 'tw');
+  db.prepare('INSERT INTO tokens (id,account_id,provider,access_token,refresh_token,expires_at) VALUES (?,?,?,?,?,?)')
+    .run(uuid(), accountId, 'x', seal(access), refresh? seal(refresh): null, exp);
+  store.delete(state);
+  return res.send('<script>window.close && window.close();</script> X connected, you can close this tab.');
+});
+```
+
+```ts
+// /sfs-socialscale/server/src/index.ts (mount OAuth)
+// ...existing imports
+import { oauth } from './oauth.js';
+app.use('/api/oauth', oauth);
+```
+
+```env
+# /sfs-socialscale/.env.example (append)
+SECRET=change-me-for-token-encryption
+PUBLIC_SERVER_URL=http://localhost:8787
+
+# LinkedIn OAuth
+LINKEDIN_CLIENT_ID=
+LINKEDIN_CLIENT_SECRET=
+LINKEDIN_REDIRECT=http://localhost:8787/api/oauth/linkedin/callback
+
+# X (Twitter) OAuth 2.0 with PKCE
+X_CLIENT_ID=
+X_REDIRECT=http://localhost:8787/api/oauth/x/callback
+```
+
+```ts
+// /sfs-socialscale/client/src/ui/pages/Integrations.tsx (use real OAuth)
+import React from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { listAccounts } from '../../lib/api';
+
+export function Integrations() {
+  const { data, refetch } = useQuery({ queryKey: ['accounts'], queryFn: listAccounts });
+
+  async function connect(provider: 'linkedin'|'x', handle = '') {
+    const r = await fetch(`/api/oauth/${provider}/start?handle=${encodeURIComponent(handle)}`);
+    const j = await r.json();
+    const url = j?.data?.url; if (!url) return alert('OAuth error');
+    const w = window.open(url, '_blank', 'width=500,height=700');
+    const timer = setInterval(()=>{ if (w && w.closed) { clearInterval(timer); refetch(); } }, 800);
+  }
+
+  return (
+    <div className="space-y-4 max-w-xl">
+      <h2 className="text-2xl font-semibold">Integrations</h2>
+      <div className="card space-y-2">
+        <div className="flex gap-2">
+          <input id="handle-x" className="input" placeholder="@handle (optional)" />
+          <button className="btn" onClick={()=> connect('x', (document.getElementById('handle-x') as HTMLInputElement).value)}>Connect X</button>
+        </div>
+        <div className="flex gap-2">
+          <input id="handle-li" className="input" placeholder="Company or Name (optional)" />
+          <button className="btn" onClick={()=> connect('linkedin', (document.getElementById('handle-li') as HTMLInputElement).value)}>Connect LinkedIn</button>
+        </div>
+      </div>
+      <div className="grid-auto">
+        {(data??[]).map((a:any)=> (
+          <div key={a.id} className="card">
+            <div className="text-sm opacity-70">{a.platform}</div>
+            <div className="font-medium">{a.handle}</div>
+            <div className="text-xs opacity-60">{a.connected? 'Connected':'Not connected'}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+## 3) Migration CLI (import old data → new SQLite)
+```ts
+// /sfs-socialscale/server/src/migrate.ts
+import { getDB } from './db.js';
+import Database from 'better-sqlite3';
+import fs from 'node:fs';
+import { randomUUID as uuid } from 'node:crypto';
+
+function importFromOldSqlite(path: string) {
+  const target = getDB();
+  const old = new Database(path, {});
+  const tx = target.transaction((rows: any[], table: string, mapper: (r:any)=>any) => {
+    for (const r of rows) {
+      const m = mapper(r);
+      if (table==='accounts') target.prepare('INSERT OR IGNORE INTO accounts (id,platform,handle,connected,token_hint) VALUES (?,?,?,?,?)').run(m.id, m.platform, m.handle, m.connected?1:0, m.token_hint||null);
+      if (table==='templates') target.prepare('INSERT OR IGNORE INTO templates (id,name,category,premium,body) VALUES (?,?,?,?,?)').run(m.id, m.name, m.category, m.premium?1:0, m.body);
+      if (table==='posts') target.prepare('INSERT OR IGNORE INTO posts (id,account_id,body,image_alt,hashtags,status,scheduled_at,posted_at) VALUES (?,?,?,?,?,?,?,?)').run(m.id, m.account_id, m.body, m.image_alt||null, m.hashtags||null, m.status, m.scheduled_at||null, m.posted_at||null);
+    }
+  });
+
+  // Heuristics: try common table names; override via env JSON if needed
+  const map = JSON.parse(process.env.MIGRATION_MAP || '{}');
+
+  const accounts = old.prepare(`SELECT * FROM ${map.accounts?.table || 'accounts'}`).all();
+  tx(accounts, 'accounts', (r:any)=> ({ id:r.id||uuid(), platform:r.platform||'x', handle:r.handle||'user', connected:r.connected??1, token_hint:r.token_hint||null }));
+
+  const templates = old.prepare(`SELECT * FROM ${map.templates?.table || 'templates'}`).all();
+  tx(templates, 'templates', (r:any)=> ({ id:r.id||uuid(), name:r.name, category:r.category||'General', premium:!!r.premium, body:r.body }));
+
+  const posts = old.prepare(`SELECT * FROM ${map.posts?.table || 'posts'}`).all();
+  tx(posts, 'posts', (r:any)=> ({ id:r.id||uuid(), account_id:r.account_id, body:r.body, image_alt:r.image_alt, hashtags:r.hashtags, status:r.status||'draft', scheduled_at:r.scheduled_at, posted_at:r.posted_at }));
+
+  console.log('Migration from SQLite completed.');
+}
+
+function importFromJson(path: string) {
+  const j = JSON.parse(fs.readFileSync(path, 'utf8'));
+  const db = getDB();
+  const ensure = (v:any, d:any)=> (v===undefined||v===null)?d:v;
+  for (const a of j.accounts||[]) db.prepare('INSERT OR IGNORE INTO accounts (id,platform,handle,connected,token_hint) VALUES (?,?,?,?,?)').run(ensure(a.id, uuid()), ensure(a.platform,'x'), ensure(a.handle,'user'), a.connected?1:0, a.token_hint||null);
+  for (const t of j.templates||[]) db.prepare('INSERT OR IGNORE INTO templates (id,name,category,premium,body) VALUES (?,?,?,?,?)').run(ensure(t.id, uuid()), t.name, ensure(t.category,'General'), t.premium?1:0, t.body);
+  for (const p of j.posts||[]) db.prepare('INSERT OR IGNORE INTO posts (id,account_id,body,image_alt,hashtags,status,scheduled_at,posted_at) VALUES (?,?,?,?,?,?,?,?)').run(ensure(p.id, uuid()), p.account_id, p.body, p.image_alt||null, p.hashtags||null, ensure(p.status,'draft'), p.scheduled_at||null, p.posted_at||null);
+  console.log('Migration from JSON completed.');
+}
+
+const [,,mode,arg] = process.argv;
+if (!mode || !arg) {
+  console.log('Usage: tsx src/migrate.ts sqlite /path/old.sqlite  OR  tsx src/migrate.ts json /path/export.json');
+  process.exit(1);
+}
+if (mode==='sqlite') importFromOldSqlite(arg);
+if (mode==='json') importFromJson(arg);
+```
+
+```jsonc
+// /sfs-socialscale/server/package.json (append scripts)
+{
+  "scripts": {
+    "migrate:sqlite": "tsx src/migrate.ts sqlite ./old.sqlite",
+    "migrate:json": "tsx src/migrate.ts json ./export.json"
+  }
+}
+```
+
+```md
+# OAuth & Migration Quick Steps
+
+1. **Same-domain UI**
+   - Build UI: `npm -w client run build` → ensure Flask registers `create_spa_blueprint`.
+   - Visit `http://your-flask-host/app`.
+2. **OAuth**
+   - Create apps in LinkedIn & X developer portals; set redirect URIs from `.env`.
+   - Fill env: `LINKEDIN_CLIENT_ID/SECRET`, `X_CLIENT_ID`, `SECRET`, `PUBLIC_SERVER_URL`.
+   - Restart server; use Integrations → “Connect” buttons.
+3. **Migration**
+   - If you have an old SQLite DB: `npm -w server run migrate:sqlite -- ./path/to/old.sqlite` (or edit script arg).
+   - If you can export JSON: `npm -w server run migrate:json -- ./path/to/export.json`.
+```
+
+
+---
+
+# SmartFlowSite integration pack (style + links)
+
+## PLAN (pseudocode)
+- Mirror SmartFlowSite’s brand in SFS UI: colors, fonts, spacing → update client tokens.
+- Serve SFS UI at `/app` under the same Flask site (already added) → use that URL in links.
+- Add a **Projects grid tile** for “SFS • AI Social Media Bot” into SmartFlowSite’s 4 project spots.
+- Provide a **scripted linker** that inserts/updates the project in `data/systems.json` and patches `index.html` if needed.
+- Minimal CSS additions to match gold-accent cards/buttons.
+
+```diff
+# /sfs-socialscale/client/src/index.css  (brand tokens to match site)
+@@
+-:root { color-scheme: light dark; }
+-body { @apply bg-neutral-950 text-neutral-100; }
++:root { color-scheme: light dark; --bg:#0b0b0b; --text:#f5f5f5; --gold:#d4af37; --muted:#bfbfbf; }
++body { background: var(--bg); color: var(--text); }
+-.card { @apply rounded-2xl p-4 shadow-xl bg-neutral-900; }
++.card { @apply rounded-2xl p-4 shadow-xl; background: #111; border: 1px solid rgba(212,175,55,.18); }
+-.btn { @apply rounded-xl px-3 py-2 font-medium bg-white/10 hover:bg-white/20; }
++.btn { @apply rounded-xl px-3 py-2 font-medium; background: linear-gradient(180deg, rgba(212,175,55,.22), rgba(212,175,55,.08)); border: 1px solid rgba(212,175,55,.35); }
++.btn:hover { filter: brightness(1.1); }
+-.input { @apply rounded-xl px-3 py-2 bg-white/5 border border-white/10 w-full; }
++.input { @apply rounded-xl px-3 py-2 w-full; background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.12); color: var(--text); }
++.badge { display:inline-block; padding:.2rem .5rem; border:1px solid rgba(212,175,55,.4); border-radius:.6rem; color:var(--text); }
+```
+
+```python
+# /SmartFlowSite/app.py  (mount the SPA + API proxy if not already)
+from flask import Flask
+from flask_ui_bridge.spa import create_spa_blueprint
+import os
+
+app = Flask(__name__, static_folder='static', static_url_path='/static')
+
+# ... your existing routes ...
+
+# Mount SFS UI at /app with Node API target
+create_spa_blueprint(
+    app,
+    static_folder=os.path.join(os.path.dirname(__file__), 'sfs-socialscale', 'client', 'dist'),
+    api_base=os.getenv('NODE_API', 'http://localhost:8787')
+)
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=int(os.getenv('PORT', 5000)))
+```
+
+```js
+// /SmartFlowSite/scripts/link_sfs_project.js
+// WHY: programmatically add/refresh the “AI Social Media Bot” tile in the 4-slot grid.
+import fs from 'node:fs';
+import path from 'node:path';
+
+const root = path.resolve(process.cwd());
+const dataPath = path.join(root, 'data', 'systems.json');
+const indexPath = path.join(root, 'index.html');
+const url = process.env.SFS_APP_URL || '/app';
+
+function ensureSystems() {
+  let json = { systems: [] };
+  if (fs.existsSync(dataPath)) json = JSON.parse(fs.readFileSync(dataPath, 'utf8'));
+  const systems = json.systems || [];
+  const id = 'sfs-ai-social';
+  const entry = {
+    id, name: 'SFS • AI Social Media Bot',
+    summary: 'Generate, schedule, and track posts across platforms.',
+    href: url,
+    badge: 'LIVE',
+    icon: '/static-logo.png'
+  };
+  const idx = systems.findIndex((s) => s.id === id);
+  if (idx >= 0) systems[idx] = { ...systems[idx], ...entry };
+  else systems.unshift(entry);
+  json.systems = systems.slice(0, 4); // keep top 4 spots
+  fs.mkdirSync(path.dirname(dataPath), { recursive: true });
+  fs.writeFileSync(dataPath, JSON.stringify(json, null, 2));
+  console.log('Updated systems.json with', entry.name, '→', entry.href);
+}
+
+function patchIndex() {
+  if (!fs.existsSync(indexPath)) return;
+  let html = fs.readFileSync(indexPath, 'utf8');
+  if (!/id="projects-grid"/.test(html)) return; // grid already present
+  // No-op: assumes your template reads from data/systems.json.
+  fs.writeFileSync(indexPath, html);
+}
+
+ensureSystems();
+patchIndex();
+```
+
+```diff
+# /SmartFlowSite/styles.css  (tiny additions for badge/buttons if needed)
++.tile { background:#131313; border:1px solid rgba(212,175,55,.2); border-radius:16px; padding:16px; }
++.tile:hover { transform: translateY(-1px); box-shadow: 0 6px 24px rgba(0,0,0,.25); }
++.tile .title { color:#f5f5f5; font-weight:600; }
++.tile .desc { color:#bfbfbf; font-size:14px; }
++.tile .cta { display:inline-flex; align-items:center; gap:.4rem; padding:.5rem .8rem; border-radius:10px; border:1px solid rgba(212,175,55,.35); color:#f5f5f5; background:linear-gradient(180deg, rgba(212,175,55,.2), rgba(212,175,55,.08)); }
++.badge { display:inline-block; padding:.15rem .45rem; border:1px solid rgba(212,175,55,.4); border-radius:.6rem; color:#f5f5f5; font-size:12px; }
+```
+
+```html
+<!-- /SmartFlowSite/index.html (projects section snippet) -->
+<section id="projects" class="section">
+  <h2 class="section-title">SmartFlow Systems</h2>
+  <div id="projects-grid" class="grid">
+    <!-- Existing three spots here... -->
+    <!-- New: AI Social Media Bot tile (reads href=/app) -->
+    <a class="tile" href="/app">
+      <div class="badge">LIVE</div>
+      <h3 class="title">SFS • AI Social Media Bot</h3>
+      <p class="desc">Generate, schedule, and track multi-platform posts with AI.</p>
+      <div class="cta">Open App →</div>
+    </a>
+  </div>
+</section>
+```
+
+```bash
+# Usage: link project into the 4-slot grid
+cd SmartFlowSite
+node scripts/link_sfs_project.js   # SFS_APP_URL=/app by default
+# Build the React UI once and serve from Flask domain
+cd sfs-socialscale/client && npm run build
+# Start Flask
+python3 app.py
+```
+
+
+---
+
+# Auto-wire 3 more SFS tiles + Live Metrics badge
+
+## PLAN (pseudocode)
+- Extend linker to accept up to 3 additional projects via CLI or JSON.
+- Update `data/systems.json` → keep top 4 (order given), dedupe by `id`.
+- Add dynamic **Live badge** on tiles: fetch `/api/metrics/active` and show "Active today: N".
+- Server: add `/api/metrics/active` and `/api/metrics/bulk` (24h window, sum of analytics rows).
+- Provide a `metrics:seed` script to generate demo activity.
+
+```ts
+// /sfs-socialscale/server/src/routes.metrics.ts
+import { Router } from 'express';
+import { DateTime } from 'luxon';
+import { getDB } from './db.js';
+import { ok } from './util.js';
+
+export const metrics = Router();
+
+function sinceISO(hours = 24) {
+  return DateTime.utc().minus({ hours }).toISO();
+}
+
+metrics.get('/active', (_req, res) => {
+  const row = getDB().prepare('SELECT COUNT(*) as c FROM analytics WHERE ts >= ?').get(sinceISO(24));
+  res.json(ok({ active_today: Number(row.c || 0) }));
+});
+
+metrics.get('/bulk', (req, res) => {
+  // For now, same number for all apps; in future, join by app_id
+  const apps = String(req.query.apps || '').split(',').filter(Boolean);
+  const row = getDB().prepare('SELECT COUNT(*) as c FROM analytics WHERE ts >= ?').get(sinceISO(24));
+  const n = Number(row.c || 0);
+  const map: Record<string, number> = {};
+  for (const a of apps) map[a] = n;
+  res.json(ok({ active_today: map }));
+});
+```
+
+```ts
+// /sfs-socialscale/server/src/index.ts (mount metrics)
+import { metrics } from './routes.metrics.js';
+app.use('/api/metrics', metrics);
+```
+
+```jsonc
+// /sfs-socialscale/server/package.json (append)
+{
+  "scripts": {
+    "metrics:seed": "tsx src/seed-metrics.ts"
+  }
+}
+```
+
+```ts
+// /sfs-socialscale/server/src/seed-metrics.ts
+import { getDB } from './db.js';
+import { DateTime } from 'luxon';
+import { randomUUID } from 'node:crypto';
+
+const db = getDB();
+const now = DateTime.utc();
+for (let i=0;i<120;i++) {
+  const ts = now.minus({ minutes: Math.floor(Math.random()* (24*60)) }).toISO();
+  const post = db.prepare('SELECT id FROM posts ORDER BY RANDOM() LIMIT 1').get() as any;
+  const postId = post?.id || randomUUID();
+  db.prepare('INSERT OR IGNORE INTO posts (id,account_id,body,status) VALUES (?,?,?,?)').run(postId, 'seed', 'Seeded', 'posted');
+  db.prepare('INSERT INTO analytics (id,post_id,metric,value,ts) VALUES (?,?,?,?,?)')
+    .run(randomUUID(), postId, 'engagement', Math.floor(1+Math.random()*5), ts);
+}
+console.log('Seeded analytics events.');
+```
+
+```js
+// /SmartFlowSite/scripts/link_projects.js  (replace previous link script)
+import fs from 'node:fs'; import path from 'node:path';
+const root = path.resolve(process.cwd());
+const dataPath = path.join(root, 'data', 'systems.json');
+const urlDefault = process.env.SFS_APP_URL || '/app';
+
+function readJSON(p, fallback) { try { return JSON.parse(fs.readFileSync(p,'utf8')); } catch { return fallback; } }
+function writeJSON(p, j) { fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, JSON.stringify(j,null,2)); }
+
+// Usage:
+// node scripts/link_projects.js \
+//   '{"id":"sfs-ai-social","name":"SFS • AI Social Media Bot","href":"/app","badge":"LIVE","icon":"/static-logo.png"}' \
+//   '{"id":"sfs-proj-2","name":"SFS • Project Two","href":"/proj2","badge":"BETA"}' \
+//   '{"id":"sfs-proj-3","name":"SFS • Project Three","href":"/proj3"}'
+
+const args = process.argv.slice(2).map(a=>{ try { return JSON.parse(a); } catch { return null; } }).filter(Boolean);
+if (!args.length) args.push({ id:'sfs-ai-social', name:'SFS • AI Social Media Bot', href:urlDefault, badge:'LIVE', icon:'/static-logo.png' });
+
+const json = readJSON(dataPath, { systems: [] });
+const byId = new Map(json.systems.map(s=> [s.id, s]));
+for (const entry of args) {
+  const e = { badge:'', icon:'/static-logo.png', summary:'', ...entry };
+  byId.set(e.id, e);
+}
+// Keep only 4 spots in a deterministic order: CLI args first, then existing
+const merged = [...args.map(a=> byId.get(a.id)), ...json.systems.filter(s=> !args.find(a=> a.id===s.id))].slice(0,4);
+writeJSON(dataPath, { systems: merged });
+console.log('Updated systems.json with', merged.length, 'tiles');
+```
+
+```html
+<!-- /SmartFlowSite/partials/projects.html (or within index.html grid) -->
+<a class="tile" href="/app" data-app="sfs-ai-social">
+  <div class="badge"><span class="live">Active today: —</span></div>
+  <h3 class="title">SFS • AI Social Media Bot</h3>
+  <p class="desc">Generate, schedule, and track multi-platform posts with AI.</p>
+  <div class="cta">Open App →</div>
+</a>
+<script>
+(async function(){
+  try {
+    const el = document.querySelector('[data-app="sfs-ai-social"] .live');
+    const r = await fetch('/api/metrics/active');
+    const j = await r.json();
+    el.textContent = 'Active today: ' + (j?.data?.active_today ?? 0);
+  } catch (e) { /* ignore */ }
+})();
+</script>
+```
+
+```md
+## How to fill the 4 slots now
+
+1) **Seed metrics (optional)**
+```bash
+cd sfs-socialscale && npm -w server run metrics:seed
+```
+2) **Link 3 more projects** (replace names/urls as needed)
+```bash
+cd SmartFlowSite
+node scripts/link_projects.js \
+  '{"id":"sfs-ai-social","name":"SFS • AI Social Media Bot","href":"/app","badge":"LIVE"}' \
+  '{"id":"sfs-automation","name":"SFS • Automation Hub","href":"/automation","badge":"BETA"}' \
+  '{"id":"sfs-content","name":"SFS • Content Studio","href":"/content"}'
+```
+3) **Rebuild content if your site uses a build step**
+```bash
+node scripts/build.js || true
+```
+4) **Run site (Flask)**
+```bash
+python3 app.py
+```
+
+> The metrics badge is live — it reads `/api/metrics/active` via the Flask proxy and shows 24h activity.
+```
+
+
+
