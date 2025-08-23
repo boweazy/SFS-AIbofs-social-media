@@ -16,11 +16,12 @@ Preferred communication style: Simple, everyday language.
 - **UK Localization**: en-GB locale for time formatting, GBP pricing display
 
 ## Backend Architecture  
-- **Flask Framework**: Python web framework serving PWA assets and maintaining admin functionality
-- **PWA Asset Serving**: Direct file serving for styles.css, script.js, manifest.webmanifest, service worker
+- **Hybrid Flask + Node.js**: Flask serves main app and templates, Node.js provides AI chat API
+- **Flask Routes**: PWA assets, admin dashboard, social media generator, booking system
+- **Node.js API Server**: Express with OpenAI integration, security middleware, rate limiting
 - **SQLAlchemy Models**: Multi-tenant database with Tenant, User, Booking, AuditLog models
-- **Static File Routing**: Assets served from /assets/ directory, legacy admin dashboard preserved
-- **Gunicorn WSGI**: Production-ready server configuration with proper static file handling
+- **Cross-Origin Setup**: CORS enabled for Flask-to-Node.js communication
+- **Production Ready**: Gunicorn + Express with security headers and compression
 
 ## Data Storage
 - **File-based Storage**: JSON file (`data.json`) containing application state
@@ -40,19 +41,19 @@ Preferred communication style: Simple, everyday language.
 # Current Status (August 17, 2025)
 
 ## Recent Changes
-- **PWA Upgrade Complete**: Transformed Flask app into fast Progressive Web App with offline support
-- **Vanilla HTML/CSS/JS**: Pure web technologies for instant loading and smooth animations
-- **Service Worker**: Implemented offline caching with network-first strategy for HTML and cache-first for assets
-- **PWA Manifest**: Installable app with dark theme and SmartFlow Systems branding
-- **SmartFlow AIbot-Social**: New social media management interface with AI post generation
+- **AI Chat Integration**: Added premium AI chat widget with Node.js/Express backend and OpenAI integration
+- **Hybrid Architecture**: Flask serves main app on port 5000, Node.js serves AI chat API on port 3000
+- **Premium Chat Interface**: Black/brown/gold themed chat modal with accessibility features and rate limiting
+- **Navigation Integration**: Added "AI Chat" link to main navigation for seamless user experience
+- **SmartFlow AI System Prompt**: Configured for concise, premium responses with brand voice consistency
 
 ## Current Deployment Status
-- **Progressive Web App**: Fast, installable app with offline functionality and instant updates
-- **Service Worker Active**: Caches critical files, handles offline scenarios with fallback page
-- **Social Media Demo**: Live post generator with platform-native copy for X/Twitter and LinkedIn  
-- **PWA Features**: Manifest, favicon, offline.html, update toast notifications
-- **Flask Backend**: Maintains admin dashboard and booking system for legacy functionality
-- **Dark Theme**: Black+gold aesthetic with smooth animations and responsive design
+- **Dual-Server Architecture**: Flask app (port 5000) + Node.js AI service (port 3000)
+- **Premium AI Chat**: Accessible via /chat route with OpenAI GPT-4o-mini integration
+- **Brand Consistent**: Black/brown/gold theme matching SmartFlow design system
+- **Security Features**: Helmet, CORS, rate limiting, and input sanitization
+- **Accessibility**: Focus traps, ARIA labels, keyboard navigation support
+- **Progressive Enhancement**: Works with or without AI service running
 
 ## Comprehensive Features Implemented
 

@@ -102,5 +102,10 @@ app.post('/api/chat', async (req, res) => {
   }
 });
 
+// Serve main page at root for integration
+app.get('/', express.static('.'), (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
+
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`SmartFlow running → http://localhost:${PORT}`));
+app.listen(PORT, () => console.log(`SmartFlow AI Chat running → http://localhost:${PORT}`));

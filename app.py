@@ -461,6 +461,14 @@ def tester():
     THEME = {"bg":"#0b0b0b","gold":"#d4af37","text":"#f2f2f2"}
     return render_template("tester.html", app_name=APP_NAME, theme=THEME)
 
+# AI Chat page
+@app.get("/chat")
+def chat_page():
+    """Serve the AI Chat widget interface"""
+    APP_NAME = "SmartFlow Systems"
+    THEME = {"bg":"#0b0b0b","gold":"#d4af37","text":"#f2f2f2"}
+    return render_template("chat.html", app_name=APP_NAME, theme=THEME)
+
 # ---------- Plan gating ----------
 @app.get("/feature/<name>")
 def feature_access(name):

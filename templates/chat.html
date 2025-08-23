@@ -1,0 +1,205 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+:root{
+  --sf-black:#0D0D0D; --sf-brown:#3B2F2F;
+  --sf-gold:#FFD700; --sf-gold-2:#E6C200;
+  --sf-beige:#F5F5DC; --sf-white:#FFFFFF;
+}
+
+.chat-container{
+  max-width:960px; margin:0 auto; padding:1.25rem;
+}
+
+.chat-card{
+  background:var(--sf-brown);
+  border:1px solid #2a2121;
+  border-radius:14px;
+  box-shadow:0 10px 30px rgba(0,0,0,.35);
+  padding:1rem;
+  margin-bottom: 2rem;
+}
+
+.chat-launch-btn{
+  background:var(--sf-gold);
+  color:#111;
+  font-weight:700;
+  border:none;
+  border-radius:12px;
+  padding:.85rem 1.1rem;
+  transition:.2s transform,.2s box-shadow,.2s background;
+  cursor:pointer;
+}
+
+.chat-launch-btn:hover{
+  background:linear-gradient(90deg,var(--sf-gold) 0%, var(--sf-gold-2) 100%);
+  box-shadow:0 8px 24px rgba(255,215,0,.25);
+  transform:translateY(-1px);
+}
+
+.chat-modal-backdrop{
+  position:fixed; inset:0; background:rgba(0,0,0,.55);
+  display:none; align-items:center; justify-content:center;
+  z-index:999;
+}
+.chat-modal{ width:min(720px,92vw); max-height:85vh; display:flex; flex-direction:column }
+.chat-header{
+  display:flex; align-items:center; justify-content:space-between;
+  padding:.8rem 1rem; border-bottom:1px solid #2a2121;
+}
+.chat-body{
+  overflow:auto; padding:1rem; display:flex; flex-direction:column; gap:.75rem;
+  background: #121212; min-height: 300px;
+}
+.chat-footer{
+  display:flex; gap:.5rem; padding:.75rem; border-top:1px solid #2a2121; background:#101010;
+}
+
+.chat-bubble{ padding:.75rem .9rem; border-radius:12px; font-size:.95rem; max-width:85% }
+.chat-bubble.bot{ background:#171717; border:1px solid #262626; color:var(--sf-beige) }
+.chat-bubble.user{ background:#231b1b; border:1px solid #312525; color:var(--sf-white); margin-left:auto }
+
+.chat-input{
+  background:#151515;
+  color:var(--sf-beige);
+  border:1px solid #222;
+  border-radius:10px;
+  padding:.75rem .9rem;
+  flex: 1;
+}
+
+.badge{
+  background:#141212; color:var(--sf-gold);
+  border:1px solid #2a2121; padding:.2rem .5rem; border-radius:999px;
+}
+</style>
+
+<div class="chat-container">
+  <div class="chat-card">
+    <h2>Premium AI Assistant</h2>
+    <p>Fast, precise help — coding, content, research, and more. Powered by OpenAI's advanced language models with SmartFlow's premium system prompt.</p>
+    <button class="chat-launch-btn" id="open-chat">Start Chat Session</button>
+  </div>
+</div>
+
+<!-- Chat Modal -->
+<div class="chat-modal-backdrop" id="chat-backdrop" role="dialog" aria-modal="true" aria-label="SmartFlow Chat">
+  <div class="card chat-modal" id="chat-modal">
+    <div class="chat-header">
+      <strong>SmartFlow AI Chat</strong>
+      <button class="btn" id="chat-close" aria-label="Close chat">Close</button>
+    </div>
+    <div class="chat-body" id="chat-list" aria-live="polite">
+      <div class="chat-bubble bot">
+        Hello! I'm SmartFlow AI. I can help you with coding, content creation, research, and business questions. What would you like to work on today?
+      </div>
+    </div>
+    <div class="chat-footer">
+      <form id="chat-form" style="display:flex;gap:.5rem;flex:1">
+        <input id="chat-input" class="chat-input" placeholder="Ask anything…" aria-label="Chat message" />
+        <button id="chat-send" class="btn" type="submit">Send</button>
+      </form>
+      <span id="chat-typing" class="badge" hidden>SmartFlow is typing…</span>
+    </div>
+  </div>
+</div>
+
+<script>
+// Chat functionality for Flask integration
+(function(){
+  const qs = s => document.querySelector(s);
+  const backdrop = qs('#chat-backdrop');
+  const modal = qs('#chat-modal');
+  const openBtn = qs('#open-chat');
+  const closeBtn = qs('#chat-close');
+  const form = qs('#chat-form');
+  const input = qs('#chat-input');
+  const list = qs('#chat-list');
+  const sendBtn = qs('#chat-send');
+  const typing = qs('#chat-typing');
+
+  let conversation = [];
+  let lastFocus = null;
+
+  function openModal(){
+    console.log('Opening SmartFlow AI Chat');
+    lastFocus = document.activeElement;
+    backdrop.style.display = 'flex';
+    setTimeout(()=> input.focus(), 0);
+  }
+  
+  function closeModal(){
+    backdrop.style.display = 'none';
+    if (lastFocus) lastFocus.focus();
+  }
+
+  // Focus trap for accessibility
+  backdrop.addEventListener('keydown', (e)=>{
+    if (e.key === 'Escape') closeModal();
+    if (e.key === 'Tab'){
+      const focusables = modal.querySelectorAll('button, [href], input, textarea, [tabindex]:not([tabindex="-1"])');
+      const f = Array.from(focusables);
+      if (!f.length) return;
+      const first = f[0], last = f[f.length-1];
+      if (e.shiftKey && document.activeElement === first){ last.focus(); e.preventDefault(); }
+      else if (!e.shiftKey && document.activeElement === last){ first.focus(); e.preventDefault(); }
+    }
+  });
+
+  openBtn.addEventListener('click', openModal);
+  closeBtn.addEventListener('click', closeModal);
+  backdrop.addEventListener('click', (e)=>{ if (e.target === backdrop) closeModal(); });
+
+  function pushBubble(role, text){
+    const div = document.createElement('div');
+    div.className = `chat-bubble ${role}`;
+    div.textContent = text;
+    list.appendChild(div);
+    list.scrollTop = list.scrollHeight;
+  }
+
+  async function sendMessage(text){
+    console.log('Sending message to SmartFlow AI');
+    typing.hidden = false;
+    sendBtn.disabled = true;
+
+    pushBubble('user', text);
+    conversation.push({ role: 'user', content: text });
+    input.value = '';
+
+    try{
+      // Call the Node.js API running on port 3000
+      const res = await fetch('http://localhost:3000/api/chat', {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json' },
+        body: JSON.stringify({ messages: conversation.slice(-10) }) // Keep last 10 messages
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(()=>({}));
+        throw new Error(err?.error || 'Network error - Make sure Node.js server is running on port 3000');
+      }
+
+      const data = await res.json();
+      const answer = data.answer || 'Sorry, I did not receive a response.';
+      pushBubble('bot', answer);
+      conversation.push({ role: 'assistant', content: answer });
+    }catch(err){
+      pushBubble('bot', 'Sorry, I ran into an issue. Please make sure the Node.js AI service is running on port 3000, and try again.');
+      console.error('Chat error:', err);
+    }finally{
+      typing.hidden = true;
+      sendBtn.disabled = false;
+      input.focus();
+    }
+  }
+
+  form.addEventListener('submit', (e)=>{
+    e.preventDefault();
+    const text = input.value.trim();
+    if (!text) return;
+    sendMessage(text);
+  });
+})();
+</script>
+{% endblock %}
