@@ -9,19 +9,17 @@ Preferred communication style: Simple, everyday language.
 # System Architecture
 
 ## Frontend Architecture
-- **Progressive Web App**: Vanilla HTML/CSS/JS with service worker for offline functionality
-- **Dark Theme UI**: Black background with gold accent colors (#d4af37, #f5d67b), smooth animations
-- **Canvas Effects**: Interactive hero section with animated golden rays following mouse movement
-- **Responsive Design**: Mobile-optimized grid layouts, accessible navigation, reduced motion support
-- **UK Localization**: en-GB locale for time formatting, GBP pricing display
+- **Single Page Application**: Uses vanilla JavaScript with a class-based architecture (`SocialAI` class)
+- **Dark Theme UI**: Custom CSS with gold accent colors, responsive grid layout
+- **Real-time Updates**: Polling mechanism to refresh post status and display updates
+- **Localization**: Configured for UK market with en-GB locale, 24-hour time format, and GBP currency
 
-## Backend Architecture  
-- **Hybrid Flask + Node.js**: Flask serves main app and templates, Node.js provides AI chat API
-- **Flask Routes**: PWA assets, admin dashboard, social media generator, booking system
-- **Node.js API Server**: Express with OpenAI integration, security middleware, rate limiting
-- **SQLAlchemy Models**: Multi-tenant database with Tenant, User, Booking, AuditLog models
-- **Cross-Origin Setup**: CORS enabled for Flask-to-Node.js communication
-- **Production Ready**: Gunicorn + Express with security headers and compression
+## Backend Architecture
+- **FastAPI Framework**: Asynchronous Python web framework for REST API endpoints (requires uvicorn, not gunicorn)
+- **Absolute Path Resolution**: Uses `BASE_DIR = Path(__file__).resolve().parent` for reliable static file serving
+- **Single-file JSON Storage**: Simple file-based data persistence using `Store` class with async locking
+- **Dataclass Models**: Uses Python dataclasses for `PostRecord` and `State` with automatic serialization
+- **Static File Serving**: Serves frontend assets directly through FastAPI with fallback error handling
 
 ## Data Storage
 - **File-based Storage**: JSON file (`data.json`) containing application state
@@ -38,22 +36,21 @@ Preferred communication style: Simple, everyday language.
 - **Manual Token Management**: Simple token storage per platform
 - **Stub Implementation**: Basic authentication structure ready for real API integration
 
-# Current Status (August 17, 2025)
+# Current Status (August 16, 2025)
 
 ## Recent Changes
-- **AI Chat Integration**: Added premium AI chat widget with Node.js/Express backend and OpenAI integration
-- **Hybrid Architecture**: Flask serves main app on port 5000, Node.js serves AI chat API on port 3000
-- **Premium Chat Interface**: Black/brown/gold themed chat modal with accessibility features and rate limiting
-- **Navigation Integration**: Added "AI Chat" link to main navigation for seamless user experience
-- **SmartFlow AI System Prompt**: Configured for concise, premium responses with brand voice consistency
+- **Complete FastAPI Rebuild**: Implemented comprehensive social media management platform with all premium features
+- **WSGI Compatibility Layer**: Added asgiref adapter to run FastAPI with existing gunicorn workflow
+- **Enhanced User Experience**: Complete dark brown/black + shiny gold theme with 7 comprehensive tabs
+- **Comprehensive Feature Set**: All requested premium features including quotas, analytics, exports, and A/B testing
 
 ## Current Deployment Status
-- **Dual-Server Architecture**: Flask app (port 5000) + Node.js AI service (port 3000)
-- **Premium AI Chat**: Accessible via /chat route with OpenAI GPT-4o-mini integration
-- **Brand Consistent**: Black/brown/gold theme matching SmartFlow design system
-- **Security Features**: Helmet, CORS, rate limiting, and input sanitization
-- **Accessibility**: Focus traps, ARIA labels, keyboard navigation support
-- **Progressive Enhancement**: Works with or without AI service running
+- **FastAPI Application**: Fully featured social media management platform
+- **Pricing System**: Free plan (30 posts/month) vs Pro plan (300 posts/month) with upgrade-at-point-of-need
+- **Template System**: Built-in templates + custom template CRUD with admin token protection
+- **Analytics & Exports**: Full KPI dashboard, CSV/iCal exports, monthly analytics
+- **Lead Capture**: Newsletter signup, referral system, NPS scoring
+- **Smart Features**: Best-time analysis, bulk scheduling, smart reply generation, A/B experiments
 
 ## Comprehensive Features Implemented
 
