@@ -2,7 +2,7 @@ import { BarChart3, Calendar, FileTemplate, Home, MessageSquare, Settings, Users
 
 interface SidebarProps {
   currentPage: string
-  onPageChange: (page: string) => void
+  onPageChange: (page: any) => void
 }
 
 const menuItems = [
@@ -16,24 +16,40 @@ const menuItems = [
 
 export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
   return (
-    <div className="w-64 bg-gray-900 border-r border-gray-800 p-4">
-      <div className="mb-8">
-        <h1 className="text-xl font-bold text-sf-gold">SmartFlow SocialScale</h1>
-        <p className="text-sm text-gray-400">Advanced Social Media Management</p>
+    <div style={{width: '256px', backgroundColor: '#111', borderRight: '1px solid #333', padding: '16px'}}>
+      <div style={{marginBottom: '32px'}}>
+        <h1 style={{fontSize: '20px', fontWeight: 'bold', color: '#ffd700', marginBottom: '8px'}}>SmartFlow SocialScale</h1>
+        <p style={{fontSize: '14px', color: '#888'}}>Advanced Social Media Management</p>
       </div>
       
-      <nav className="space-y-2">
+      <nav style={{display: 'flex', flexDirection: 'column', gap: '8px'}}>
         {menuItems.map((item) => {
           const Icon = item.icon
+          const isActive = currentPage === item.id
           return (
             <button
               key={item.id}
               onClick={() => onPageChange(item.id)}
-              className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-colors ${
-                currentPage === item.id
-                  ? 'bg-sf-gold text-black'
-                  : 'text-gray-300 hover:bg-gray-800'
-              }`}
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                padding: '12px',
+                borderRadius: '8px',
+                border: 'none',
+                cursor: 'pointer',
+                backgroundColor: isActive ? '#ffd700' : 'transparent',
+                color: isActive ? '#000' : '#ccc',
+                textAlign: 'left',
+                transition: 'all 0.2s'
+              }}
+              onMouseOver={(e) => {
+                if (!isActive) e.currentTarget.style.backgroundColor = '#333'
+              }}
+              onMouseOut={(e) => {
+                if (!isActive) e.currentTarget.style.backgroundColor = 'transparent'
+              }}
             >
               <Icon size={18} />
               {item.label}

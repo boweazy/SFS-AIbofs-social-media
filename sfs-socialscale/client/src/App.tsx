@@ -26,11 +26,11 @@ function App() {
   }
 
   return (
-    <div className="flex h-screen bg-sf-dark text-white">
+    <div style={{display: 'flex', height: '100vh', backgroundColor: '#1a1a1a', color: 'white'}}>
       <Sidebar currentPage={currentPage} onPageChange={setCurrentPage} />
-      <div className="flex-1 flex flex-col">
+      <div style={{flex: 1, display: 'flex', flexDirection: 'column'}}>
         <Header />
-        <main className="flex-1 overflow-auto p-6">
+        <main style={{flex: 1, padding: '24px', overflow: 'auto'}}>
           {renderPage()}
         </main>
       </div>

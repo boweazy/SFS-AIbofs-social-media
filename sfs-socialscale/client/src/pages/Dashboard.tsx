@@ -1,130 +1,133 @@
-import { useQuery } from '@tanstack/react-query'
-import { endpoints } from '../api/client'
-import { Activity, Calendar, MessageSquare, TrendingUp, Users } from 'lucide-react'
+import { useEffect, useState } from 'react'
 
 export function Dashboard() {
-  const { data: posts } = useQuery({
-    queryKey: ['posts'],
-    queryFn: () => endpoints.getPosts().then(r => r.data.data)
-  })
-  
-  const { data: accounts } = useQuery({
-    queryKey: ['accounts'],
-    queryFn: () => endpoints.getAccounts().then(r => r.data.data)
-  })
+  const [accounts, setAccounts] = useState([])
+  const [posts, setPosts] = useState([])
+  const [loading, setLoading] = useState(true)
 
-  const stats = {
-    totalPosts: posts?.length || 0,
-    scheduledPosts: posts?.filter((p: any) => p.status === 'scheduled').length || 0,
-    connectedAccounts: accounts?.filter((a: any) => a.connected).length || 0,
-    engagement: 2847 // Mock engagement metric
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [accountsRes, postsRes] = await Promise.all([
+          fetch('http://localhost:8787/api/accounts'),
+          fetch('http://localhost:8787/api/posts')
+        ])
+        
+        const accountsData = await accountsRes.json()
+        const postsData = await postsRes.json()
+        
+        if (accountsData.ok) setAccounts(accountsData.data)
+        if (postsData.ok) setPosts(postsData.data)
+      } catch (error) {
+        console.error('Error fetching data:', error)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchData()
+  }, [])
+
+  if (loading) {
+    return (
+      <div style={{padding: '20px', textAlign: 'center'}}>
+        <h2 style={{color: '#ffd700', marginBottom: '16px'}}>Loading Dashboard...</h2>
+      </div>
+    )
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold mb-2">Dashboard</h1>
-        <p className="text-gray-400">Overview of your social media performance</p>
-      </div>
-
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="sf-card">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-400">Total Posts</p>
-              <p className="text-2xl font-bold text-sf-gold">{stats.totalPosts}</p>
-            </div>
-            <MessageSquare className="text-sf-gold" size={24} />
-          </div>
-        </div>
-        
-        <div className="sf-card">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-400">Scheduled</p>
-              <p className="text-2xl font-bold text-sf-gold">{stats.scheduledPosts}</p>
-            </div>
-            <Calendar className="text-sf-gold" size={24} />
-          </div>
-        </div>
-        
-        <div className="sf-card">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-400">Connected Accounts</p>
-              <p className="text-2xl font-bold text-sf-gold">{stats.connectedAccounts}</p>
-            </div>
-            <Users className="text-sf-gold" size={24} />
-          </div>
-        </div>
-        
-        <div className="sf-card">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-400">Total Engagement</p>
-              <p className="text-2xl font-bold text-sf-gold">{stats.engagement}</p>
-            </div>
-            <TrendingUp className="text-sf-gold" size={24} />
-          </div>
-        </div>
-      </div>
-
-      {/* Recent Activity */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="sf-card">
-          <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-            <Activity size={20} />
-            Recent Posts
-          </h3>
-          <div className="space-y-3">
-            {posts?.slice(0, 5).map((post: any) => (
-              <div key={post.id} className="flex items-start gap-3 p-3 bg-gray-700 rounded">
-                <div className="w-8 h-8 bg-sf-gold rounded-full flex items-center justify-center text-black font-bold text-xs">
-                  {post.account_id.slice(0, 2).toUpperCase()}
+    <div>
+      <h1 style={{fontSize: '32px', fontWeight: 'bold', color: '#ffd700', marginBottom: '24px'}}>
+        SocialScale Dashboard
+      </h1>
+      
+      <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '32px'}}>
+        <div style={{backgroundColor: '#222', padding: '20px', borderRadius: '12px', border: '1px solid #333'}}>
+          <h3 style={{color: '#ffd700', fontSize: '18px', marginBottom: '16px'}}>Connected Accounts</h3>
+          {accounts.length === 0 ? (
+            <p style={{color: '#888'}}>No accounts connected yet</p>
+          ) : (
+            <div style={{display: 'flex', flexDirection: 'column', gap: '8px'}}>
+              {accounts.map((account: any) => (
+                <div key={account.id} style={{
+                  display: 'flex', 
+                  justifyContent: 'space-between', 
+                  alignItems: 'center',
+                  padding: '8px',
+                  backgroundColor: '#333',
+                  borderRadius: '6px'
+                }}>
+                  <span style={{fontWeight: '500'}}>{account.handle}</span>
+                  <span style={{
+                    fontSize: '12px',
+                    padding: '4px 8px',
+                    backgroundColor: account.platform === 'x' ? '#1DA1F2' : '#0A66C2',
+                    color: 'white',
+                    borderRadius: '4px'
+                  }}>
+                    {account.platform.toUpperCase()}
+                  </span>
                 </div>
-                <div className="flex-1">
-                  <p className="text-sm text-gray-300 line-clamp-2">{post.body}</p>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Status: <span className={`capitalize ${
-                      post.status === 'posted' ? 'text-green-400' :
-                      post.status === 'scheduled' ? 'text-yellow-400' :
-                      'text-gray-400'
-                    }`}>{post.status}</span>
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
 
-        <div className="sf-card">
-          <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-            <Users size={20} />
-            Connected Accounts
-          </h3>
-          <div className="space-y-3">
-            {accounts?.map((account: any) => (
-              <div key={account.id} className="flex items-center justify-between p-3 bg-gray-700 rounded">
-                <div className="flex items-center gap-3">
-                  <div className={`w-3 h-3 rounded-full ${
-                    account.connected ? 'bg-green-400' : 'bg-red-400'
-                  }`} />
-                  <div>
-                    <p className="font-medium">{account.handle}</p>
-                    <p className="text-sm text-gray-400 capitalize">{account.platform}</p>
+        <div style={{backgroundColor: '#222', padding: '20px', borderRadius: '12px', border: '1px solid #333'}}>
+          <h3 style={{color: '#ffd700', fontSize: '18px', marginBottom: '16px'}}>Recent Posts</h3>
+          {posts.length === 0 ? (
+            <p style={{color: '#888'}}>No posts created yet</p>
+          ) : (
+            <div style={{display: 'flex', flexDirection: 'column', gap: '12px'}}>
+              {posts.slice(0, 3).map((post: any) => (
+                <div key={post.id} style={{
+                  padding: '12px',
+                  backgroundColor: '#333',
+                  borderRadius: '6px',
+                  borderLeft: '3px solid #ffd700'
+                }}>
+                  <p style={{marginBottom: '8px', fontSize: '14px'}}>{post.body.substring(0, 80)}...</p>
+                  <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#888'}}>
+                    <span style={{
+                      color: post.status === 'posted' ? '#00ff00' : post.status === 'scheduled' ? '#ffaa00' : '#888'
+                    }}>
+                      {post.status.toUpperCase()}
+                    </span>
+                    {post.posted_at && <span>{new Date(post.posted_at).toLocaleDateString()}</span>}
                   </div>
                 </div>
-                <span className={`text-xs px-2 py-1 rounded ${
-                  account.connected 
-                    ? 'bg-green-900 text-green-400' 
-                    : 'bg-red-900 text-red-400'
-                }`}>
-                  {account.connected ? 'Connected' : 'Disconnected'}
-                </span>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div style={{backgroundColor: '#222', padding: '20px', borderRadius: '12px', border: '1px solid #333'}}>
+        <h3 style={{color: '#ffd700', fontSize: '18px', marginBottom: '16px'}}>Quick Actions</h3>
+        <div style={{display: 'flex', gap: '16px'}}>
+          <button style={{
+            padding: '12px 24px',
+            backgroundColor: '#ffd700',
+            color: '#000',
+            border: 'none',
+            borderRadius: '8px',
+            fontWeight: '500',
+            cursor: 'pointer'
+          }}>
+            Generate New Posts
+          </button>
+          <button style={{
+            padding: '12px 24px',
+            backgroundColor: 'transparent',
+            color: '#ffd700',
+            border: '2px solid #ffd700',
+            borderRadius: '8px',
+            fontWeight: '500',
+            cursor: 'pointer'
+          }}>
+            View Analytics
+          </button>
         </div>
       </div>
     </div>
