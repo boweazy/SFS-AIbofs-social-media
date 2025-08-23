@@ -9,7 +9,7 @@ export function initRealtime(http: HTTPServer) {
   setInterval(() => {
     // Demo: emit random engagement events
     const db = getDB();
-    const posts = db.prepare('SELECT id FROM posts WHERE status IN ("posted","scheduled") ORDER BY RANDOM() LIMIT 1').all() as Array<{id: string}>;
+    const posts = db.prepare('SELECT id FROM posts WHERE status IN (?, ?) ORDER BY RANDOM() LIMIT 1').all('posted', 'scheduled') as Array<{id: string}>;
     if (posts.length) {
       const postId = posts[0].id;
       const value = Math.floor(1 + Math.random() * 5);
