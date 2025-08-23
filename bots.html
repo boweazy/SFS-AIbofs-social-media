@@ -1,0 +1,32 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Bots — SmartFlow</title>
+<link rel="icon" href="assets/favicon.svg"/>
+<link rel="stylesheet" href="style.css"/>
+<script defer src="bots.js"></script></head><body>
+<header class="nav"><a class="brand" href="index.html"><img src="logo.png" width="22" height="22" alt=""/> <span>SmartFlow Systems</span></a></header>
+<main class="page">
+  <h1>Social Bots & Smart Replies</h1>
+  <section class="card">
+    <h3>Smart Replies (demo)</h3>
+    <textarea id="thread" rows="5" placeholder="Paste a thread or comment chain…"></textarea>
+    <div class="form-actions">
+      <button class="btn primary glow" id="genReplies">Generate Replies</button>
+    </div>
+    <ul id="replies" class="list"></ul>
+  </section>
+  <section class="card">
+    <h3>Best-time API</h3>
+    <div class="form-actions">
+      <button class="btn" id="fetchTimes">Fetch times (LinkedIn)</button>
+    </div>
+    <ul id="times" class="list"></ul>
+  </section>
+  <section class="card">
+    <h3>Scheduler Export</h3>
+    <p>Pass an array of {text, when, title} to <code>/api/schedule</code> to download an ICS for your calendar.</p>
+  </section>
+</main>
+<footer class="footer"><p>© <span id="year"></span> SmartFlow Systems</p></footer>
+</body></html>

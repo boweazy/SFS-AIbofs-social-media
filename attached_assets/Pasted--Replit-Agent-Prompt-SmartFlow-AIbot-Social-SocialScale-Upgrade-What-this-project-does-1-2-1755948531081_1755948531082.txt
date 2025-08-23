@@ -1,0 +1,756 @@
+# Replit Agent Prompt — SmartFlow AIbot-Social + SocialScale Upgrade
+
+## What this project does (1–2 lines)
+Upgrade the existing SmartFlow AIbot-Social PWA with a SocialScale-style landing (logos, contact choices, FAQ), new pages (Booking w/ ICS, Shop, Bots), and keep generator/inbox/PWA intact. Phase 2 adds a Node/Express server with security headers, public config, Stripe Checkout, and Playwright smoke tests.
+
+## Files & where they go
+Root: `index.html` (update), `styles.css` (append), `sw.js` (update), `book.html`, `book.js`, `shop.html`, `shop.js`, `bots.html`, `bots.js`, `server.js`, `package.json`, `.env.example`, `playwright.config.ts`, `README.md` (append).  
+Folders: `assets/` (SVG logos), `tests/e2e/` (Playwright), `scripts/` (`sanity-check.mjs`, `audit-routes.mjs`).
+
+## Setup (packages & env)
+Node.js project. Install deps: `npm i`.  
+Copy `.env.example` → `.env` and fill (optional for Formspree/Stripe): `CONTACT_EMAIL`, `WHATSAPP_NUMBER`, `FORMSPREE_FORM_ID`, `STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID_*`.
+
+## How to run in Replit
+Set Run: **Node.js →** `npm start`.  
+Local: `npm run dev` (same server).  
+Tests: `npm run playwright` then `npm run test:e2e`.
+
+────────────────────────────────────────────────────────────────
+
+SmartFlow systems SocialScale — Upgrade Patch (Replit Agent Ready)
+Implementation plan (pseudocode)
+	•	Audit current SmartFlow AIbot-Social PWA: keep generator, best-time API, CSV/ICS export, inbox, dashboard, SW.
+	•	Extend landing to match SocialScale style: nav links, trust logos row, contact choices, polished pricing anchor, FAQ accordion.
+	•	Add three new pages: book.html (+ book.js with ICS export + Formspree fallback to Inbox), shop.html (+ shop.js cart stub), bots.html (+ bots.js demos using existing endpoints).
+	•	Inject SEO JSON-LD (SoftwareApplication) in <head> on index.html.
+	•	Append responsive utilities to styles.css (logos row, grids, FAQ, contact choices) using existing black/gold theme.
+	•	Update sw.js: bump cache version, pre-cache new files.
+	•	Ship placeholder SVG partner logos in assets/.
+	•	Update README with a clear checklist and replacements (Formspree ID, Stripe links).
+
+Copy–paste this whole block into your Replit Agent
+You are my Replit build agent. Upgrade the existing SmartFlow AIbot-Social project by merging in a SocialScale-style landing and utilities. Keep pure HTML/CSS/JS. Don’t remove existing features; extend them.
+
+================================
+UPDATE: index.html (insert or replace matching blocks)
+================================
+- In <nav> add links before Dashboard:
+  <a href="#faq">FAQ</a>
+  <a href="book.html">Booking</a>
+  <a href="shop.html">Shop</a>
+  <a href="bots.html">Bots</a>
+
+- After the hero badges, insert “trust logos”:
+<section class="logos" aria-label="Trusted by">
+  <img src="assets/logo-stripe.svg" alt="Stripe" width="96" height="24">
+  <img src="assets/logo-google.svg" alt="Google" width="96" height="24">
+  <img src="assets/logo-buffer.svg" alt="Buffer" width="96" height="24">
+  <img src="assets/logo-shopify.svg" alt="Shopify" width="96" height="24">
+  <img src="assets/logo-twilio.svg" alt="Twilio" width="96" height="24">
+</section>
+
+- Before #pricing, add a “Contact choices” slice:
+<section class="contact-choices">
+  <a class="btn primary glow" href="mailto:hello@smartflowsystems.co.uk">Email us</a>
+  <a class="btn glow" href="https://wa.me/447000000000" target="_blank" rel="noopener">WhatsApp</a>
+  <a class="btn ghost" href="#contact">Contact form</a>
+</section>
+
+- Add an SEO JSON-LD block in <head> (keep within existing <head>):
+<script type="application/ld+json">
+{
+ "@context":"https://schema.org",
+ "@type":"SoftwareApplication",
+ "name":"SmartFlow AIbot-Social",
+ "applicationCategory":"MarketingApplication",
+ "offers":{"@type":"Offer","priceCurrency":"GBP","price":"19.00"},
+ "operatingSystem":"Web",
+ "description":"AI social media manager for SMBs with post generation, best-time, CSV/ICS scheduling, and inbox.",
+ "brand":{"@type":"Brand","name":"SmartFlow Systems"}
+}
+</script>
+
+- Add an FAQ section near the end:
+<section id="faq" class="faq">
+  <h2>FAQ</h2>
+  <details open>
+    <summary>How is this different from generic AI writers?</summary>
+    <p>Posts follow a conversion structure (hook → benefit+proof → CTA + smart hashtags) and export to CSV/ICS.</p>
+  </details>
+  <details>
+    <summary>Can I book clients directly?</summary>
+    <p>Yes — use the Booking page; submissions create calendar events and email you (Formspree or mailto).</p>
+  </details>
+  <details>
+    <summary>Do you support ecommerce?</summary>
+    <p>See the Shop demo — swap Stripe links when you’re ready.</p>
+  </details>
+</section>
+
+================================
+NEW: book.html
+================================
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Book a Call — SmartFlow</title>
+<link rel="icon" href="assets/favicon.svg"/>
+<link rel="stylesheet" href="styles.css"/>
+<script defer src="book.js"></script></head><body>
+<header class="nav"><a class="brand" href="index.html"><img src="assets/favicon.svg" width="22" height="22" alt=""/> <span>SmartFlow Systems</span></a></header>
+<main class="page">
+  <h1>Book a discovery call</h1>
+  <form id="book-form" class="card" action="https://formspree.io/f/yourFormID" method="POST">
+    <div class="grid2">
+      <label>Name <input name="name" required></label>
+      <label>Email <input name="_replyto" type="email" required></label>
+    </div>
+    <div class="grid2">
+      <label>Preferred date <input name="date" type="date" required></label>
+      <label>Preferred time <input name="time" type="time" required></label>
+    </div>
+    <label>Notes <textarea name="notes" rows="4" placeholder="What are you aiming to achieve?"></textarea></label>
+    <div class="form-actions">
+      <button class="btn primary glow" type="submit">Request slot</button>
+      <button class="btn" type="button" id="icsBtn">Add to calendar (ICS)</button>
+    </div>
+  </form>
+  <p id="book-status" role="status" class="note"></p>
+</main>
+<footer class="footer"><p>© <span id="year"></span> SmartFlow Systems</p></footer>
+</body></html>
+
+================================
+NEW: book.js
+================================
+const Y = document.querySelector('#year'); if (Y) Y.textContent = new Date().getFullYear();
+const form = document.getElementById('book-form');
+const statusEl = document.getElementById('book-status');
+function mkICS({name,email,date,time}){
+  const start = new Date(`${date}T${time}:00`);
+  const end = new Date(start.getTime()+30*60e3);
+  const fmt = d=>d.toISOString().replace(/[-:]/g,'').split('.')[0]+'Z';
+  return [
+    'BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//SmartFlow//EN',
+    'BEGIN:VEVENT',
+    `UID:${(crypto && crypto.randomUUID)? crypto.randomUUID(): Date.now()+'@smartflow'}`,
+    `DTSTAMP:${fmt(new Date())}`,
+    `DTSTART:${fmt(start)}`,`DTEND:${fmt(end)}`,
+    'SUMMARY:SmartFlow Discovery Call',
+    `DESCRIPTION:Booked by ${name} (${email})`,
+    'END:VEVENT','END:VCALENDAR'
+  ].join('\r\n');
+}
+document.getElementById('icsBtn')?.addEventListener('click', ()=>{
+  const fd = new FormData(form);
+  const ics = mkICS(Object.fromEntries(fd.entries()));
+  const blob = new Blob([ics],{type:'text/calendar'});
+  const a = Object.assign(document.createElement('a'),{href:URL.createObjectURL(blob),download:'smartflow_booking.ics'});
+  a.click(); URL.revokeObjectURL(a.href);
+});
+form?.addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const fd = new FormData(form);
+  try{
+    const res = await fetch(form.action,{method:'POST',body:fd,headers:{'Accept':'application/json'}});
+    if (res.ok){ form.reset(); statusEl.textContent = '✅ Request sent — check your email.'; }
+    else throw new Error('send-failed');
+  }catch{ statusEl.textContent='⚠️ Offline: we saved your request to Inbox.';
+    const saved=JSON.parse(localStorage.getItem('inbox')||'[]');
+    saved.push({ ...Object.fromEntries(fd.entries()), status:'pending', date:new Date().toISOString() });
+    localStorage.setItem('inbox', JSON.stringify(saved));
+  }
+});
+
+================================
+NEW: shop.html
+================================
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Shop — SmartFlow</title>
+<link rel="icon" href="assets/favicon.svg"/>
+<link rel="stylesheet" href="styles.css"/>
+<script defer src="shop.js"></script></head><body>
+<header class="nav"><a class="brand" href="index.html"><img src="assets/favicon.svg" width="22" height="22" alt=""/> <span>SmartFlow Systems</span></a></header>
+<main class="page">
+  <h1>SmartFlow Templates & Add-ons</h1>
+  <div id="products" class="grid3"></div>
+  <div class="cart card">
+    <h3>Cart</h3>
+    <ul id="cartList"></ul>
+    <div class="form-actions">
+      <button class="btn primary glow" id="checkout">Checkout (stub)</button>
+      <button class="btn" id="clearCart">Clear</button>
+    </div>
+  </div>
+</main>
+<footer class="footer"><p>© <span id="year"></span> SmartFlow Systems</p></footer>
+</body></html>
+
+================================
+NEW: shop.js
+================================
+const YEAR = document.querySelector('#year'); if (YEAR) YEAR.textContent=new Date().getFullYear();
+const products = [
+  { id:'tpl-basic',  name:'Post Templates — Basic',  price:1900,  desc:'30 ready-to-use hooks, hashtags, CTAs.'},
+  { id:'tpl-pro',    name:'Post Templates — Pro',    price:4900,  desc:'90 templates + best-time presets.'},
+  { id:'addon-crew', name:'Team Seats (x2)',         price:9900,  desc:'Add two collaborators.'}
+];
+const gbp = p=>`£${(p/100).toFixed(2)}`; // why: avoid non-ASCII identifier issues
+const cart = JSON.parse(localStorage.getItem('cart')||'[]');
+const $ = s=>document.querySelector(s);
+function renderProducts(){
+  $('#products').innerHTML = products.map(p=>`
+    <div class="card"><h3>${p.name}</h3><p>${p.desc}</p><strong class="price">${gbp(p.price)}</strong>
+    <button class="btn small glow" data-add="${p.id}">Add</button></div>`).join('');
+}
+function renderCart(){
+  const list=$('#cartList'); if(!list) return;
+  list.innerHTML = cart.length? cart.map(i=>`<li>${i.name} <em>${gbp(i.price)}</em></li>`).join('') : '<li>Empty</li>';
+  localStorage.setItem('cart', JSON.stringify(cart));
+}
+document.addEventListener('click', e=>{
+  const add = e.target.closest('[data-add]'); if (!add) return;
+  const item = products.find(p=>p.id===add.dataset.add); if (!item) return;
+  cart.push(item); renderCart();
+});
+$('#clearCart')?.addEventListener('click', ()=>{ cart.length=0; renderCart(); });
+$('#checkout')?.addEventListener('click', async ()=>{
+  alert('Stripe checkout stub — replace with real Checkout link per item.');
+});
+renderProducts(); renderCart();
+
+================================
+NEW: bots.html
+================================
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Bots — SmartFlow</title>
+<link rel="icon" href="assets/favicon.svg"/>
+<link rel="stylesheet" href="styles.css"/>
+<script defer src="bots.js"></script></head><body>
+<header class="nav"><a class="brand" href="index.html"><img src="assets/favicon.svg" width="22" height="22" alt=""/> <span>SmartFlow Systems</span></a></header>
+<main class="page">
+  <h1>Social Bots & Smart Replies</h1>
+  <section class="card">
+    <h3>Smart Replies (demo)</h3>
+    <textarea id="thread" rows="5" placeholder="Paste a thread or comment chain…"></textarea>
+    <div class="form-actions">
+      <button class="btn primary glow" id="genReplies">Generate Replies</button>
+    </div>
+    <ul id="replies" class="list"></ul>
+  </section>
+  <section class="card">
+    <h3>Best-time API</h3>
+    <div class="form-actions">
+      <button class="btn" id="fetchTimes">Fetch times (LinkedIn)</button>
+    </div>
+    <ul id="times" class="list"></ul>
+  </section>
+  <section class="card">
+    <h3>Scheduler Export</h3>
+    <p>Pass an array of {text, when, title} to <code>/api/schedule</code> to download an ICS for your calendar.</p>
+  </section>
+</main>
+<footer class="footer"><p>© <span id="year"></span> SmartFlow Systems</p></footer>
+</body></html>
+
+================================
+NEW: bots.js
+================================
+const $ = s=>document.querySelector(s);
+const YEAR = $('#year'); if (YEAR) YEAR.textContent = new Date().getFullYear();
+$('#genReplies')?.addEventListener('click', async ()=>{
+  const context = ($('#thread').value||'').trim();
+  if (!context) return alert('Paste a thread first.');
+  const r = await fetch('/api/smart_replies',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({context,mood:'supportive',n:5})});
+  const j = await r.json(); const list = $('#replies'); list.innerHTML = (j.replies||[]).map(s=>`<li>${s}</li>`).join('');
+});
+$('#fetchTimes')?.addEventListener('click', async ()=>{
+  const r = await fetch('/api/best-time?platform=LinkedIn'); const j = await r.json();
+  $('#times').innerHTML = (j.times||[]).slice(0,8).map(t=>`<li>${new Date(t.iso).toLocaleString()}</li>`).join('');
+});
+
+================================
+UPDATE: styles.css (append — keep black/gold variables)
+================================
+/* Logos row + simple pages */
+.logos{max-width:1080px;margin:18px auto;display:flex;gap:18px;flex-wrap:wrap;justify-content:center;opacity:.85}
+.page{max-width:920px;margin:0 auto;padding:40px 20px}
+.grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.price{color:var(--gold);font-weight:800}
+.list{list-style:disc;padding-left:22px}
+.faq details{background:#101010;border:1px solid #222;border-radius:12px;padding:10px;margin:10px 0}
+.faq summary{cursor:pointer;font-weight:700}
+.contact-choices{max-width:900px;margin:0 auto 30px;display:flex;gap:10px;justify-content:center}
+
+/* Smol tweaks */
+@media (max-width: 980px){ .grid2,.grid3{grid-template-columns:1fr} }
+
+================================
+UPDATE: sw.js (add new pages + bump version)
+================================
+- Change VERSION to 'sfs-v2025-08-23c'
+- Add to CORE_ASSETS: 'book.html','book.js','shop.html','shop.js','bots.html','bots.js',
+- Keep existing caching strategy.
+
+================================
+NEW ASSETS (placeholder SVG logos)
+================================
+Create: assets/logo-stripe.svg, assets/logo-google.svg, assets/logo-buffer.svg, assets/logo-shopify.svg, assets/logo-twilio.svg
+Each content:
+<svg width="96" height="24" xmlns="http://www.w3.org/2000/svg"><rect fill="#0b0b0b" width="96" height="24"/><text x="8" y="17" fill="#d4af37" font-size="12" font-weight="700">BRAND</text></svg>
+(Replace BRAND with STRIPE, GOOGLE, BUFFER, SHOPIFY, TWILIO respectively)
+
+================================
+UPDATE: README.md (append)
+================================
+## SocialScale-style Additions
+- Trust logos row, WhatsApp/Email quick actions, FAQ accordion, booking page with ICS export, shop demo, bots showcase using existing APIs.
+- SEO JSON-LD and black+gold visuals maintained. Replace placeholder Formspree ID and Stripe links.
+
+
+Phase 2 — Apply Patch, Security, Stripe, Formspree, and E2E Tests
+Pseudocode
+	•	Harden server: Express + compression + security headers (CSP, HSTS (prod), X-Content-Type-Options, Referrer-Policy, Permissions-Policy).
+	•	Public config endpoint for frontend to read Formspree + contact numbers.
+	•	Real Stripe Checkout endpoint /api/checkout using env price IDs; return url for redirect. Graceful 501 when not configured.
+	•	Upgrade shop.js to call /api/checkout; keep cart in localStorage.
+	•	Upgrade book.js to read FORMSPREE_FORM_ID from /api/config/public if provided.
+	•	Keep PWA SW; bump version; ensure new pages are pre-cached.
+	•	Add Playwright with webServer (Node server), smoke tests for nav, pages, SW offline, and mocked API calls.
+	•	Add sanity script to detect missing SW asset entries.
+	•	Provide .env.example and updated package.json scripts.
+Copy–paste code (create/overwrite these files)
+# package.json
+{
+  "name": "smartflow-aibot-social",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js",
+    "playwright": "npx playwright install --with-deps",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "sanity": "node scripts/sanity-check.mjs",
+    "audit": "node scripts/audit-routes.mjs && node scripts/sanity-check.mjs"
+  },
+  "dependencies": {
+    "compression": "^1.7.4",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "morgan": "^1.10.0",
+    "stripe": "^16.0.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.47.0"
+  }
+}
+
+}
+
+# .env.example
+# Server
+PORT=3000
+NODE_ENV=development
+PUBLIC_BASE_URL=http://localhost:3000
+# Contact / forms
+CONTACT_EMAIL=hello@smartflowsystems.co.uk
+WHATSAPP_NUMBER=447000000000
+FORMSPREE_FORM_ID=yourFormID
+# Stripe (use price IDs from your Stripe dashboard)
+STRIPE_SECRET_KEY=sk_live_or_test
+STRIPE_PRICE_ID_tpl_basic=price_123
+STRIPE_PRICE_ID_tpl_pro=price_456
+STRIPE_PRICE_ID_addon_crew=price_789
+
+# server.js
+/* Minimal Express server with security headers, static hosting, and APIs */
+require('dotenv').config();
+const path = require('path');
+const fs = require('fs');
+const express = require('express');
+const compression = require('compression');
+const morgan = require('morgan');
+
+const app = express();
+const PORT = Number(process.env.PORT || 3000);
+const IS_PROD = process.env.NODE_ENV === 'production';
+
+// Body parsers
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true }));
+app.use(compression());
+app.use(morgan('tiny'));
+
+// Security headers (helmet-lite) — keep strict but Stripe-friendly
+app.use((req, res, next) => {
+  const self = "'self'";
+  const csp = [
+    `default-src ${self}`,
+    `script-src ${self} https://js.stripe.com`,
+    `style-src ${self} 'unsafe-inline'`,
+    `img-src ${self} data:`,
+    `font-src ${self} data:`,
+    `connect-src ${self} https://api.stripe.com`,
+    `frame-src https://js.stripe.com`,
+    `frame-ancestors 'none'`,
+    `base-uri ${self}`,
+    `form-action ${self} https://formspree.io`
+  ].join('; ');
+  res.setHeader('Content-Security-Policy', csp);
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+  if (IS_PROD) {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
+  next();
+});
+
+// Static files (serve project root)
+app.use(express.static(path.resolve('.'), { maxAge: IS_PROD ? '1h' : 0 }));
+
+// Health
+app.get('/api/health', (_req, res) => res.json({ ok: true }));
+
+// Public config for frontend — do NOT leak secrets
+app.get('/api/config/public', (_req, res) => {
+  res.json({
+    contactEmail: process.env.CONTACT_EMAIL || '',
+    whatsappNumber: process.env.WHATSAPP_NUMBER || '',
+    formspreeFormId: process.env.FORMSPREE_FORM_ID || ''
+  });
+});
+
+// Stripe Checkout
+app.post('/api/checkout', async (req, res) => {
+  try {
+    const { items } = req.body || {};
+    const secret = process.env.STRIPE_SECRET_KEY;
+    if (!secret) return res.status(501).json({ ok: false, reason: 'not_configured' });
+    const stripe = require('stripe')(secret);
+    const priceMap = {
+      tpl_basic: process.env.STRIPE_PRICE_ID_tpl_basic,
+      tpl_pro: process.env.STRIPE_PRICE_ID_tpl_pro,
+      addon_crew: process.env.STRIPE_PRICE_ID_addon_crew
+    };
+    const idToPrice = (id) => {
+      // normalise incoming ids like 'tpl-basic' -> 'tpl_basic'
+      const key = String(id).replace(/[-]/g, '_');
+      return priceMap[key];
+    };
+    const line_items = (Array.isArray(items) ? items : [])
+      .map((id) => idToPrice(id))
+      .filter(Boolean)
+      .map((price) => ({ price, quantity: 1 }));
+    if (!line_items.length) return res.status(400).json({ ok: false, error: 'no_line_items' });
+
+    const base = process.env.PUBLIC_BASE_URL || `http://localhost:${PORT}`;
+    const session = await stripe.checkout.sessions.create({
+      mode: 'payment',
+      line_items,
+      success_url: `${base}/shop.html?success=true&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${base}/shop.html?canceled=true`
+    });
+    return res.json({ ok: true, url: session.url });
+  } catch (err) {
+    console.error('checkout error', err);
+    return res.status(500).json({ ok: false, error: 'server_error' });
+  }
+});
+
+// Ensure sw.js is served with correct type
+app.get('/sw.js', (req, res, next) => {
+  const p = path.resolve('sw.js');
+  if (fs.existsSync(p)) {
+    res.type('application/javascript');
+    return res.send(fs.readFileSync(p, 'utf8'));
+  }
+  return next();
+});
+
+app.listen(PORT, () => {
+  console.log(`SmartFlow running on http://localhost:${PORT}`);
+});
+
+# shop.js (replace previous stub with real checkout)
+const YEAR = document.querySelector('#year'); if (YEAR) YEAR.textContent=new Date().getFullYear();
+const products = [
+  { id:'tpl-basic',  name:'Post Templates — Basic',  price:1900,  desc:'30 ready-to-use hooks, hashtags, CTAs.'},
+  { id:'tpl-pro',    name:'Post Templates — Pro',    price:4900,  desc:'90 templates + best-time presets.'},
+  { id:'addon-crew', name:'Team Seats (x2)',         price:9900,  desc:'Add two collaborators.'}
+];
+const gbp = p=>`£${(p/100).toFixed(2)}`;
+const cart = JSON.parse(localStorage.getItem('cart')||'[]');
+const $ = s=>document.querySelector(s);
+function renderProducts(){
+  $('#products').innerHTML = products.map(p=>`
+    <div class="card"><h3>${p.name}</h3><p>${p.desc}</p><strong class="price">${gbp(p.price)}</strong>
+    <button class="btn small glow" data-add="${p.id}">Add</button></div>`).join('');
+}
+function renderCart(){
+  const list=$('#cartList'); if(!list) return;
+  list.innerHTML = cart.length? cart.map(i=>`<li>${i.name} <em>${gbp(i.price)}</em></li>`).join('') : '<li>Empty</li>';
+  localStorage.setItem('cart', JSON.stringify(cart));
+}
+document.addEventListener('click', e=>{
+  const add = e.target.closest('[data-add]'); if (!add) return;
+  const item = products.find(p=>p.id===add.dataset.add); if (!item) return;
+  cart.push(item); renderCart();
+});
+$('#clearCart')?.addEventListener('click', ()=>{ cart.length=0; renderCart(); });
+$('#checkout')?.addEventListener('click', async ()=>{
+  if (!cart.length) return alert('Cart is empty.');
+  try{
+    const res = await fetch('/api/checkout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({items: cart.map(i=>i.id)})});
+    const data = await res.json();
+    if (data && data.url) { window.location.href = data.url; return; }
+    if (data && data.reason === 'not_configured') {
+      alert('Stripe not configured. Add STRIPE_* env vars to enable real checkout.');
+    } else {
+      alert('Checkout failed. Try again.');
+    }
+  }catch(err){
+    alert('Network issue. Please try later.');
+  }
+});
+renderProducts(); renderCart();
+
+# book.js (augment to pull Formspree ID from server config)
+const Y = document.querySelector('#year'); if (Y) Y.textContent = new Date().getFullYear();
+const form = document.getElementById('book-form');
+const statusEl = document.getElementById('book-status');
+(async ()=>{
+  try{
+    const cfg = await (await fetch('/api/config/public')).json();
+    if (cfg.formspreeFormId && form) form.action = `https://formspree.io/f/${cfg.formspreeFormId}`;
+  }catch{/* offline okay */}
+})();
+function mkICS({name,email,date,time}){
+  const start = new Date(`${date}T${time}:00`);
+  const end = new Date(start.getTime()+30*60e3);
+  const fmt = d=>d.toISOString().replace(/[-:]/g,'').split('.')[0]+'Z';
+  return [
+    'BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//SmartFlow//EN',
+    'BEGIN:VEVENT',
+    `UID:${(globalThis.crypto && crypto.randomUUID)? crypto.randomUUID(): Date.now()+'@smartflow'}`,
+    `DTSTAMP:${fmt(new Date())}`,
+    `DTSTART:${fmt(start)}`,`DTEND:${fmt(end)}`,
+    'SUMMARY:SmartFlow Discovery Call',
+    `DESCRIPTION:Booked by ${name} (${email})`,
+    'END:VEVENT','END:VCALENDAR'
+  ].join('
+');
+}
+document.getElementById('icsBtn')?.addEventListener('click', ()=>{
+  const fd = new FormData(form);
+  const ics = mkICS(Object.fromEntries(fd.entries()));
+  const blob = new Blob([ics],{type:'text/calendar'});
+  const a = Object.assign(document.createElement('a'),{href:URL.createObjectURL(blob),download:'smartflow_booking.ics'});
+  a.click(); URL.revokeObjectURL(a.href);
+});
+form?.addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const fd = new FormData(form);
+  try{
+    const res = await fetch(form.action,{method:'POST',body:fd,headers:{'Accept':'application/json'}});
+    if (res.ok){ form.reset(); statusEl.textContent = '✅ Request sent — check your email.'; }
+    else throw new Error('send-failed');
+  }catch{ statusEl.textContent='⚠️ Offline: we saved your request to Inbox.'; 
+    const saved=JSON.parse(localStorage.getItem('inbox')||'[]'); 
+    saved.push({ ...Object.fromEntries(fd.entries()), status:'pending', date:new Date().toISOString() });
+    localStorage.setItem('inbox', JSON.stringify(saved));
+  }
+});
+
+# sw.js (ensure version + core assets)
+ (ensure version + core assets)
+const VERSION = 'sfs-v2025-08-23c';
+const CORE_ASSETS = [
+  '/',
+  '/index.html','/styles.css','/assets/favicon.svg',
+  '/book.html','/book.js',
+  '/shop.html','/shop.js',
+  '/bots.html','/bots.js'
+];
+self.addEventListener('install', (e) => {
+  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(CORE_ASSETS)).then(() => self.skipWaiting()));
+});
+self.addEventListener('activate', (e) => {
+  e.waitUntil(
+    caches.keys().then((keys) => Promise.all(keys.filter(k => k !== VERSION).map(k => caches.delete(k)))).then(() => self.clients.claim())
+  );
+});
+self.addEventListener('fetch', (e) => {
+  const { request } = e;
+  if (request.method !== 'GET') return; // why: don't cache POST/PUT
+  e.respondWith(
+    caches.match(request).then((cached) => cached || fetch(request).then((resp) => {
+      const copy = resp.clone();
+      caches.open(VERSION).then((c) => c.put(request, copy));
+      return resp;
+    }).catch(() => caches.match('/index.html')))
+  );
+});
+
+# assets/logo-stripe.svg
+<svg width="96" height="24" xmlns="http://www.w3.org/2000/svg"><rect fill="#0b0b0b" width="96" height="24"/><text x="8" y="17" fill="#d4af37" font-size="12" font-weight="700">STRIPE</text></svg>
+
+# assets/logo-google.svg
+<svg width="96" height="24" xmlns="http://www.w3.org/2000/svg"><rect fill="#0b0b0b" width="96" height="24"/><text x="8" y="17" fill="#d4af37" font-size="12" font-weight="700">GOOGLE</text></svg>
+
+# assets/logo-buffer.svg
+<svg width="96" height="24" xmlns="http://www.w3.org/2000/svg"><rect fill="#0b0b0b" width="96" height="24"/><text x="8" y="17" fill="#d4af37" font-size="12" font-weight="700">BUFFER</text></svg>
+
+# assets/logo-shopify.svg
+<svg width="96" height="24" xmlns="http://www.w3.org/2000/svg"><rect fill="#0b0b0b" width="96" height="24"/><text x="8" y="17" fill="#d4af37" font-size="12" font-weight="700">SHOPIFY</text></svg>
+
+# assets/logo-twilio.svg
+<svg width="96" height="24" xmlns="http://www.w3.org/2000/svg"><rect fill="#0b0b0b" width="96" height="24"/><text x="8" y="17" fill="#d4af37" font-size="12" font-weight="700">TWILIO</text></svg>
+
+# playwright.config.ts
+import { defineConfig, devices } from '@playwright/test';
+export default defineConfig({
+  testDir: 'tests/e2e',
+  timeout: 60_000,
+  fullyParallel: true,
+  webServer: {
+    command: 'node server.js',
+    url: 'http://localhost:3000',
+    reuseExistingServer: !process.env.CI,
+    stdout: 'pipe', stderr: 'pipe'
+  },
+  use: {
+    baseURL: 'http://localhost:3000',
+    trace: 'retain-on-failure',
+  },
+  projects: [
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+  ],
+});
+
+# tests/e2e/smoke.spec.ts
+import { test, expect } from '@playwright/test';
+
+// Helpers to mock API endpoints used by demo pages
+async function mockApis(page){
+  await page.route('**/api/best-time**', async (route) => {
+    await route.fulfill({ json: { times: Array.from({length:8}, (_,i)=>({ iso: new Date(Date.now()+i*3_600_000).toISOString() })) } });
+  });
+  await page.route('**/api/smart_replies', async (route) => {
+    await route.fulfill({ json: { replies: ['Thanks for sharing!', 'Great insight!', 'Totally agree.', 'Nice work!', 'Appreciate the update.'] } });
+  });
+  await page.route('**/api/checkout', async (route) => {
+    await route.fulfill({ json: { ok: true, url: 'https://example.com/checkout_stub' } });
+  });
+}
+
+test('index loads and nav links exist', async ({ page }) => {
+  await page.goto('/');
+  for (const txt of ['FAQ','Booking','Shop','Bots']) {
+    await expect(page.getByRole('link', { name: txt })).toBeVisible();
+  }
+});
+
+test('booking page ICS download works', async ({ page }) => {
+  await page.goto('/book.html');
+  await page.locator('input[name="name"]').fill('Test User');
+  await page.locator('input[name="_replyto"]').fill('t@example.com');
+  await page.locator('input[name="date"]').fill('2030-01-01');
+  await page.locator('input[name="time"]').fill('09:00');
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByRole('button', { name: 'Add to calendar (ICS)' }).click(),
+  ]);
+  expect(await download.suggestedFilename()).toContain('smartflow_booking');
+});
+
+test('bots page mocks APIs', async ({ page, context }) => {
+  await mockApis(page);
+  await page.goto('/bots.html');
+  await page.locator('#thread').fill('Example thread text');
+  await page.getByRole('button', { name: 'Generate Replies' }).click();
+  await expect(page.locator('#replies li')).toHaveCount(5);
+  await page.getByRole('button', { name: 'Fetch times (LinkedIn)' }).click();
+  await expect(page.locator('#times li')).toHaveCount(8);
+});
+
+test('shop checkout redirects when API returns session url', async ({ page }) => {
+  await mockApis(page);
+  await page.goto('/shop.html');
+  await page.getByRole('button', { name: 'Add' }).first().click();
+  const [nav] = await Promise.all([
+    page.waitForEvent('framenavigated'),
+    page.getByRole('button', { name: 'Checkout' }).click(),
+  ]);
+  expect(nav.url()).toContain('example.com/checkout_stub');
+});
+
+test('service worker caches and serves offline', async ({ browser }) => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await page.goto('/');
+  // Wait for SW ready
+  await page.waitForFunction(() => navigator.serviceWorker && navigator.serviceWorker.ready);
+  // Go offline and reload a cached page
+  await context.setOffline(true);
+  await page.goto('/shop.html');
+  await expect(page.getByRole('heading', { name: 'SmartFlow Templates & Add-ons' })).toBeVisible();
+  await context.setOffline(false);
+});
+
+# scripts/sanity-check.mjs
+import fs from 'fs';
+import path from 'path';
+const sw = fs.existsSync('sw.js') ? fs.readFileSync('sw.js','utf8'): '';
+const required = ['book.html','book.js','shop.html','shop.js','bots.html','bots.js'];
+const missing = required.filter(x => !sw.includes(x));
+if (missing.length) {
+  console.warn('[SW] Missing from CORE_ASSETS:', missing.join(', '));
+  process.exitCode = 1;
+} else {
+  console.log('[SW] All required assets present.');
+}
+
+# README.md (append)
+## Running locally
+1. `cp .env.example .env` and fill values (optional for Stripe/Formspree).
+2. `npm i` and `npm run dev`.
+3. `npm run playwright` then `npm run test:e2e` to run smoke tests.
+
+## Notes
+- If Stripe env vars are absent, `/api/checkout` returns `{reason:"not_configured"}` and the client shows a helpful message.
+- Formspree ID is picked from `/api/config/public`; static fallback in `book.html` remains.
+Extra — Route audit script (ensures nav links and pages exist)
+# scripts/audit-routes.mjs
+import fs from 'fs';
+
+const html = fs.existsSync('index.html') ? fs.readFileSync('index.html', 'utf8') : '';
+const errs = [];
+
+const mustLinks = ['href="#faq"', 'href="book.html"', 'href="shop.html"', 'href="bots.html"'];
+for (const needle of mustLinks) {
+  if (!html.includes(needle)) errs.push(`Missing nav link: ${needle}`);
+}
+if (!/id="faq"/.test(html)) errs.push('Missing #faq section in index.html');
+
+const mustFiles = ['book.html','shop.html','bots.html','book.js','shop.js','bots.js'];
+for (const f of mustFiles) {
+  if (!fs.existsSync(f)) errs.push(`Missing file: ${f}`);
+}
+
+if (errs.length) {
+  console.error('[AUDIT] FAIL');
+  for (const e of errs) console.error(' -', e);
+  process.exit(1);
+} else {
+  console.log('[AUDIT] OK — nav + files present');
+}

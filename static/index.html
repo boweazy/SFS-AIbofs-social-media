@@ -5,6 +5,18 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Smart Flow Systems — Social AI</title>
   <link rel="stylesheet" href="/static/style.css" />
+  <script type="application/ld+json">
+  {
+   "@context":"https://schema.org",
+   "@type":"SoftwareApplication",
+   "name":"SmartFlow AIbot-Social",
+   "applicationCategory":"MarketingApplication",
+   "offers":{"@type":"Offer","priceCurrency":"GBP","price":"19.00"},
+   "operatingSystem":"Web",
+   "description":"AI social media manager for SMBs with post generation, best-time, CSV/ICS scheduling, and inbox.",
+   "brand":{"@type":"Brand","name":"SmartFlow Systems"}
+  }
+  </script>
 </head>
 <body>
   <header class="sfs-header">
@@ -33,6 +45,10 @@
   </div>
 
   <nav class="tabs">
+    <a href="#faq">FAQ</a>
+    <a href="book.html">Booking</a>
+    <a href="shop.html">Shop</a>
+    <a href="bots.html">Bots</a>
     <button data-tab="compose" class="active">Compose</button>
     <button data-tab="templates">Templates</button>
     <button data-tab="besttime">Best Time</button>
@@ -41,6 +57,22 @@
     <button data-tab="export">Export</button>
     <button data-tab="analytics">Analytics</button>
   </nav>
+
+  <!-- Trust logos section -->
+  <section class="logos" aria-label="Trusted by">
+    <img src="assets/logo-stripe.svg" alt="Stripe" width="96" height="24">
+    <img src="assets/logo-google.svg" alt="Google" width="96" height="24">
+    <img src="assets/logo-buffer.svg" alt="Buffer" width="96" height="24">
+    <img src="assets/logo-shopify.svg" alt="Shopify" width="96" height="24">
+    <img src="assets/logo-twilio.svg" alt="Twilio" width="96" height="24">
+  </section>
+
+  <!-- Contact choices section -->
+  <section class="contact-choices">
+    <a class="btn primary glow" href="mailto:hello@smartflowsystems.co.uk">Email us</a>
+    <a class="btn glow" href="https://wa.me/447000000000" target="_blank" rel="noopener">WhatsApp</a>
+    <a class="btn ghost" href="#contact">Contact form</a>
+  </section>
 
   <main class="grid">
     <section class="card tab" id="tab-compose" style="display:block">
@@ -282,6 +314,23 @@
       <div id="monthlyOut" class="analytics"></div>
     </section>
   </main>
+
+  <!-- FAQ Section -->
+  <section id="faq" class="faq">
+    <h2>FAQ</h2>
+    <details open>
+      <summary>How is this different from generic AI writers?</summary>
+      <p>Posts follow a conversion structure (hook → benefit+proof → CTA + smart hashtags) and export to CSV/ICS.</p>
+    </details>
+    <details>
+      <summary>Can I book clients directly?</summary>
+      <p>Yes — use the Booking page; submissions create calendar events and email you (Formspree or mailto).</p>
+    </details>
+    <details>
+      <summary>Do you support ecommerce?</summary>
+      <p>See the Shop demo — swap Stripe links when you're ready.</p>
+    </details>
+  </section>
 
   <footer class="sfs-footer">
     <span>© <span id="year"></span> Smart Flow Systems</span>
