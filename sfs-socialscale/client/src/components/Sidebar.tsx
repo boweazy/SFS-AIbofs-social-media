@@ -1,4 +1,4 @@
-import { BarChart3, Calendar, FileTemplate, Home, MessageSquare, Settings, Users } from 'lucide-react'
+import { BarChart3, Calendar, FileText, Home, MessageSquare, Users } from 'lucide-react'
 
 interface SidebarProps {
   currentPage: string
@@ -10,7 +10,7 @@ const menuItems = [
   { id: 'generator', label: 'Generator', icon: MessageSquare },
   { id: 'scheduler', label: 'Scheduler', icon: Calendar },
   { id: 'analytics', label: 'Analytics', icon: BarChart3 },
-  { id: 'templates', label: 'Templates', icon: FileTemplate },
+  { id: 'templates', label: 'Templates', icon: FileText },
   { id: 'accounts', label: 'Accounts', icon: Users },
 ]
 
